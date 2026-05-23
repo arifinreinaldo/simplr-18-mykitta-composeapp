@@ -104,7 +104,10 @@ encrypted Settings, flavors).
       prefs/      SettingsFactory (expect), TokenStore, CountryStore
       repo/       AuthRepository (loginOtp only in this slice)
     domain/
-      Country, PhonePrefix (PH +63, SG +65)
+      Country enum { PH, SG }  — internal name; serializes to backend
+                                wire-format "PHILIPPINE" / "SINGAPORE"
+                                per legacy SharedPreferences contract
+      PhonePrefix (PH +63, SG +65)
     feature/
       auth/
         country/  CountryPickerScreen, CountryPickerVM, CountryPickerStore
@@ -130,11 +133,11 @@ encrypted Settings, flavors).
 
   src/androidMain/kotlin/com/mykitta/
     actuals: BuildEnv, SqlDriverFactory, SettingsFactory,
-             PhoneFormatter, http engine
+             CountryDetector, http engine, encrypted Settings delegate
 
   src/iosMain/kotlin/com/mykitta/
     actuals: BuildEnv, SqlDriverFactory, SettingsFactory,
-             PhoneFormatter, http engine
+             CountryDetector, http engine, keychain Settings delegate
 
 :androidApp
   MyKittaApplication       — Koin start, Crashlytics init, BuildEnv read
@@ -439,10 +442,14 @@ The following are **out** of sub-project 1 and ship in later sub-projects:
    framework rebuild + app restart. **Mitigation:** primary dev loop on
    Android emulator; iOS verification once per session.
 
-5. **Phone number formatting on iOS.** No first-class libphonenumber for
-   Apple. Foundation pins the `expect` surface only; actuals (likely a wrap
-   around `NSDataDetector` / Apple's `PhoneNumberKit` via SPM) are decided
-   when the auth feature lands.
+5. **Phone number formatting on iOS — resolved for this slice.** PH and SG
+   have fixed-length rules (10 and 8 digits, simple masks). The slice
+   implements `AuthCountryFormatter` in pure common Kotlin (no
+   `expect`/`actual`, no libphonenumber). When a future feature needs
+   real international phone validation (e.g., partner registration), a
+   proper `PhoneFormatter` `expect` surface ships then, with platform
+   actuals (libphonenumber on Android, hand-rolled or PhoneNumberKit via
+   SPM on iOS).
 
 6. **Exact `doLoginOTP` endpoint contract.** The wiki names
    `Repository.kt:366-451` as the auth surface but does not capture the URL
@@ -594,15 +601,29 @@ object AuthCountryFormatter {
   "### ### ####". Strip leading "0" if user typed one.
 - SG: 8 digits after prefix (e.g., 81234567). Display mask "#### ####".
 
-### 12.5 AuthApi contract (this slice)
+### 12.5 AuthApi & AuthRepository contracts (this slice)
 
 ```kotlin
+// data/net/api — wire-level contract
 interface AuthApi {
   suspend fun loginOtp(req: LoginOtpRequest): LoginOtpResponse
 }
-data class LoginOtpRequest(val phone: String, val country: String)  // E.164 + "PH"|"SG"
-data class LoginOtpResponse(val success: Boolean, val message: String?)
+@Serializable data class LoginOtpRequest(
+  val phone: String,          // E.164, e.g. "+639171234567"
+  val country: String,        // wire-format: "PHILIPPINE" | "SINGAPORE"
+)
+@Serializable data class LoginOtpResponse(val success: Boolean, val message: String?)
+
+// data/repo — domain-level contract
+interface AuthRepository {
+  suspend fun loginOtp(phoneE164: String, country: Country): Outcome<Unit>
+}
 ```
+
+`AuthRepository` maps `(phoneE164, country)` → `LoginOtpRequest`, calls
+`AuthApi`, then wraps response/throwables through `ErrorMapper` into
+`Outcome<Unit>`. The repository is the sole consumer of `AuthApi` —
+ViewModels never touch the API directly.
 
 **Exact URL path, body envelope, and response shape:** placeholder until
 verified against legacy `Repository.kt` + `ApiPostService.kt`. The wiki
@@ -623,8 +644,9 @@ sealed interface Destination {
 
 Start destination: `CountryPicker` if `CountryStore.read() == null`,
 else `LoginOtp`. Argument passing for `OtpSent` uses Compose Navigation's
-typed argument support (Kotlin Serialization-backed routes available in
-`navigation-compose` 2.8+).
+type-safe routes (`kotlinx.serialization`-backed `@Serializable` route
+objects, supported in the current `androidx.navigation` multiplatform
+artifact — verify version at first compile per §10 risk #2).
 
 ## 13. Glossary
 
