@@ -27,18 +27,25 @@ the wiki.
 This document specifies **sub-project 1**: the shared foundation **plus a
 thin auth slice** that exercises the foundation against the real backend.
 
-The auth slice is intentionally narrow: **country picker → phone-entry login
-→ real `doLoginOTP` backend call**. It explicitly **stops at the backend
-call** — no OTP verify screen, no token issuance, no register, no Waiting
-screen, no SMS auto-read, no Google phone-hint, no Huawei detection, no PH
-CSV. Those land in later sub-projects.
+The auth slice is intentionally narrow: **a single combined login screen
+with an embedded country switcher → real `doLoginOTP` backend call**.
+WhatsApp / Telegram-style: the country chip (flag + prefix) sits above the
+phone input, tappable to open a bottom sheet of supported countries (PH,
+SG). Country is auto-selected from `CountryDetector` on first launch
+(silent, no confirm dialog) and persisted to `CountryStore` only on
+successful submit.
+
+The slice explicitly **stops at the backend call** — no OTP verify screen,
+no token issuance, no register, no Waiting screen, no SMS auto-read, no
+Google phone-hint, no Huawei detection, no PH CSV. Those land in later
+sub-projects.
 
 The deliverable is: `:shared` + `:androidApp` + `iosApp/` boot, run the auth
-slice end-to-end on both platforms (country picker → phone entry → submit
-fires the real `doLoginOTP` against the staging backend; success shows a
-placeholder "OTP sent to +XX..." screen), with all foundation cross-cutting
-components in place (Ktor, SQLDelight wired, Koin, MVIKotlin, logging,
-encrypted Settings, flavors).
+slice end-to-end on both platforms (login screen with country chip → phone
+entry → submit fires the real `doLoginOTP` against the staging backend;
+success shows a placeholder "OTP sent to +XX..." screen), with all
+foundation cross-cutting components in place (Ktor, SQLDelight wired, Koin,
+MVIKotlin, logging, encrypted Settings, flavors).
 
 ## 1. Confirmed Inputs
 
@@ -55,9 +62,11 @@ encrypted Settings, flavors).
   multiple modules only if build times demand it.
 - **New app identity.** "MyKitta" is a new application id. **No migration of
   legacy Room data** from B2B-SIMPLR.
-- **Auth slice bundled.** Country picker + phone-entry login (calls the
-  real `doLoginOTP` endpoint) are in scope as the smoke test for sub-project 1.
-  OTP verify + token issuance + register + waiting are explicitly deferred.
+- **Auth slice bundled.** Single combined login screen with an embedded
+  country switcher (calls the real `doLoginOTP` endpoint) is in scope as the
+  smoke test for sub-project 1. WhatsApp-style UX (chip + bottom-sheet),
+  silent auto-detect on first launch. OTP verify + token issuance + register
+  + waiting are explicitly deferred.
 
 ## 2. Stack Decisions
 
@@ -110,11 +119,14 @@ encrypted Settings, flavors).
       PhonePrefix (PH +63, SG +65)
     feature/
       auth/
-        country/  CountryPickerScreen, CountryPickerVM, CountryPickerStore
-        login/    LoginOtpScreen, LoginOtpVM, LoginOtpStore
-        otpsent/  OtpSentPlaceholderScreen (terminal screen of this slice)
-        AuthGraph (nav routes for the auth slice)
-        AuthCountryFormatter (phone format + validation per country)
+        LoginOtpScreen        composable (chip + bottom sheet + phone field)
+        LoginOtpStore         MVIKotlin store (country + phone state machine)
+        LoginOtpViewModel     ScreenViewModel wrapper
+        CountrySelectorSheet  ModalBottomSheet composable used by LoginOtpScreen
+        CountryDetector       expect — detect device country (PH/SG/null)
+        AuthCountryFormatter  pure-Kotlin phone format + validation per country
+        OtpSentPlaceholder    terminal screen of this slice
+        AuthGraph             nav routes (LoginOtp start, OtpSent leaf)
     ui/
       theme/      MyKittaTheme, colors, typography
       nav/        AppNavHost, Destination sealed
@@ -128,7 +140,7 @@ encrypted Settings, flavors).
   src/commonTest/kotlin/com/mykitta/
     core/         reducer tests, Outcome tests, ErrorMapper tests
     data/         AuthRepository tests (Ktor MockEngine), TokenStore + CountryStore contracts
-    feature/      CountryPickerStore + LoginOtpStore reducer/executor tests
+    feature/      LoginOtpStore reducer/executor tests, AuthCountryFormatter tests
     di/           Koin module verification
 
   src/androidMain/kotlin/com/mykitta/
@@ -292,23 +304,34 @@ The end-to-end flow exercised by sub-project 1:
 AppRoot
   └─ AppNavHost
       └─ AuthGraph
-          1. CountryPickerScreen
-             └─ CountryPickerVM : ScreenViewModel<…>
-                  Store: Intent.{Select(PH|SG), Confirm}
-                         State: { suggested: Country?, chosen: Country? }
-                         Label: NavigateToLogin
-                  Executor reads platform telephony for suggested country
-                  (expect CountryDetector); writes choice to CountryStore.
-          2. LoginOtpScreen (country-aware)
-             └─ LoginOtpVM : ScreenViewModel<…>
-                  Store: Intent.{PhoneChanged, Submit}
-                         State: { country, phoneRaw, phoneFormatted, isValid,
-                                  submitting, error }
-                         Label: NavigateToOtpSent(phoneE164)
-                  Executor → AuthRepository.loginOtp(phoneE164, country)
-                            → AuthApi POST /login/otp (path TBD from legacy)
+          Start destination = LoginOtp (always; no separate picker screen)
+
+          1. LoginOtpScreen
+             └─ LoginOtpVM : ScreenViewModel<Intent, State, Label>
+                  Store.bootstrapper (one-shot at create):
+                    - read CountryStore → if present, set state.country = saved
+                    - else call CountryDetector → if PH/SG, set; else default PH
+                  State: { country, countrySelectorOpen, phoneRaw,
+                           phoneFormatted, isValid, submitting, error }
+                  Intent.{
+                    PhoneChanged(raw),
+                    OpenCountrySelector,
+                    CloseCountrySelector,
+                    SelectCountry(Country),     // from bottom sheet
+                    Submit
+                  }
+                  Reducer: SelectCountry → recompute phoneFormatted + isValid
+                                            against the new country, close sheet
+                  Executor on Submit:
+                    → AuthRepository.loginOtp(phoneE164, country)
+                    → AuthApi POST /login/otp (exact path TBD from legacy)
+                    on Outcome.Success: write CountryStore(country)
+                                        emit Label.NavigateToOtpSent(phoneE164)
+                    on Outcome.Failure: set state.error
                   emits Message.SubmitStarted / SubmitOk / SubmitFailed
-          3. OtpSentPlaceholderScreen
+                          / CountryChanged / CountrySelectorToggled
+
+          2. OtpSentPlaceholderScreen
              Static screen showing "OTP sent to <phoneE164>". Has a Back
              affordance only. No verify input, no token expected, no auto-nav.
 ```
@@ -316,8 +339,9 @@ AppRoot
 This flow exercises the full foundation: DI, Ktor with the correct flavor
 `baseUrl`, `Auth` plugin (unused on `/login/otp` since it's unauthenticated —
 still wired), error mapping, MVI store with logging interceptor, Outcome →
-Message → State translation, CountryStore read/write, encrypted Settings,
-locale-aware phone formatting via `expect`/`actual`.
+Message → State translation, CountryStore read (bootstrapper) / write
+(executor on success), CountryDetector platform `expect`, encrypted Settings,
+pure-Kotlin phone formatting.
 
 `TokenStore` is wired and tested in isolation, but never written by this
 slice (token issuance is part of OTP verify, which is a later sub-project).
@@ -348,15 +372,21 @@ slice (token issuance is part of OTP verify, which is a later sub-project).
 - `AuthRepository.loginOtp` with Ktor `MockEngine`: Success (200), HTTP 4xx
   (invalid phone), HTTP 5xx, network failure, parse failure. Asserts
   `Outcome.Success` / `Outcome.Failure(AppError.*)` shapes.
-- `CountryPickerStore` reducer: Select(PH) → state.chosen == PH; Confirm with
-  no choice → no-op (Label not emitted).
-- `CountryPickerStore` executor: Confirm → CountryStore.write called →
-  Label.NavigateToLogin emitted.
-- `LoginOtpStore` reducer: PhoneChanged with valid PH number →
-  state.isValid == true; with invalid → false; Submit while submitting → no-op.
+- `LoginOtpStore` bootstrapper: with saved country in CountryStore → state
+  initialized to saved; with no saved country and detector returns PH →
+  initialized to PH; with no saved country and detector returns null → falls
+  back to PH default.
+- `LoginOtpStore` reducer: PhoneChanged with valid PH number → state.isValid
+  true; with invalid → false; OpenCountrySelector → selectorOpen true;
+  SelectCountry(SG) → state.country == SG, phoneFormatted recomputed against
+  SG mask, selectorOpen false; Submit while submitting → no-op.
 - `LoginOtpStore` executor: Submit → AuthRepository.loginOtp called →
-  on success Label.NavigateToOtpSent with E.164 phone; on failure state.error
-  set, no Label.
+  on success: CountryStore.write(country) called, then
+  Label.NavigateToOtpSent(phoneE164) emitted; on failure: state.error set,
+  CountryStore.write NOT called, no Label.
+- `LoginOtpStore` invariant: country switch mid-typing keeps digits but
+  rebuilds the masked format string; isValid recomputes against the new
+  country length rule.
 - `AuthCountryFormatter` tests: PH/SG masking, prefix injection, validation,
   E.164 normalization for both countries.
 
@@ -512,68 +542,87 @@ each is a deliberate re-decision moment, not an oversight:
 
 ## 12. Auth Slice — UX & Contract Detail
 
-### 12.1 Screen 1: Country Picker
+### 12.1 Screen 1: Login (combined country chip + phone entry)
 
-**Trigger:** app start when `CountryStore.read()` returns `null`.
+**Trigger:** unconditional start destination of the app.
 
-**Layout:**
-- `MyKittaScaffold` with no top bar (or top bar with logo only).
-- Centered "Select your country" heading.
-- Two large card-buttons stacked vertically:
-  - 🇵🇭 **Philippines** (+63)
-  - 🇸🇬 **Singapore** (+65)
-- Below the cards: "Auto-detected: <country>" hint when telephony detection
-  succeeds, suppressed otherwise.
-- Bottom: "Continue" primary button, disabled until a card is selected.
-
-**Behavior:**
-- Tapping a card sets `state.chosen = Country.PH | Country.SG`; card shows
-  selected state.
-- Tapping Continue: persist via `CountryStore.write(chosen)`, emit
-  `Label.NavigateToLogin`.
-- Auto-suggest pre-selects a card if detection returns a supported country;
-  user can override.
-
-**Persistence:** `CountryStore` writes to `Settings` under key `"country"`,
-value is the enum name (`"PH"` or `"SG"`). On app restart with a value
-present, picker is skipped and user lands on login screen directly.
-
-### 12.2 Screen 2: Login OTP (phone entry)
-
-**Trigger:** after country picked, or on app restart when country is set but
-no token (token tracking is foundation-only — never written by this slice).
+**Bootstrapper (runs once when store is created):**
+- Read `CountryStore`:
+  - If a saved country exists, use it.
+  - Else call `CountryDetector.detect()`:
+    - Returns `Country.PH` or `Country.SG` → use it.
+    - Returns `null` (unsupported region or detection failed) → default to
+      `Country.PH`.
+- This is **silent** — no dialog, no toast. The chip just appears
+  pre-filled.
+- Persistence happens later, on submit success — not during bootstrap.
 
 **Layout:**
-- `MyKittaScaffold` with back affordance only if entered from the picker
-  (no back if it's the start destination on a returning install).
+- `MyKittaScaffold` with no back affordance (this is the start destination).
+- Optional small logo at the top.
 - Title: "Sign in".
 - Subtitle: "Enter your phone number to receive an OTP".
-- A locked, read-only "country chip" showing flag + prefix (e.g. "🇵🇭 +63").
-  Tapping it does **nothing in this slice** (no country switcher yet — log
-  out path lives in a future sub-project).
-- Phone text field: numeric keyboard, masked live per country format
-  (`### ### ####` PH / `#### ####` SG), prefix not shown inside the input.
-- "Send OTP" primary button: disabled until `state.isValid == true`;
+- **Country chip** (tappable):
+  - Format: `🇵🇭  +63  ▾` (flag, prefix, small down-arrow indicating it's
+    tappable).
+  - Lives directly above (or as a leading element of) the phone input.
+- **Phone text field**: numeric keyboard, masked live per the selected
+  country's format (`### ### ####` PH / `#### ####` SG). Prefix is NOT
+  shown inside the input — it lives on the chip.
+- **"Send OTP" primary button**: disabled until `state.isValid == true`;
   shows a spinner when `state.submitting == true`.
 - Below the button: error text (red) when `state.error != null`.
 
+**Country bottom sheet (overlay):**
+- Triggered when `state.countrySelectorOpen == true`.
+- Material 3 `ModalBottomSheet` with title "Select country" and two list
+  rows:
+  - 🇵🇭 Philippines · +63
+  - 🇸🇬 Singapore · +65
+- The currently selected country shows a check mark or filled radio.
+- Tap a row → dismisses the sheet and switches the country.
+- Tap outside / system back → dismisses with no change.
+
 **Behavior:**
-- Each keystroke fires `Intent.PhoneChanged(raw)`. Reducer derives:
-  - `phoneFormatted` (display string, masked)
-  - `isValid` (matches country-specific length + digit-only rules from
-    `AuthCountryFormatter`)
-  - `error = null` (clears any previous error on edit)
-- Submit fires `Intent.Submit`. Executor:
+- **Phone edit.** Each keystroke fires `Intent.PhoneChanged(raw)`. Reducer
+  derives `phoneFormatted`, `isValid`, clears `error`.
+- **Open country selector.** Tapping the chip fires
+  `Intent.OpenCountrySelector` → reducer sets
+  `state.countrySelectorOpen = true`.
+- **Country switch.** Tapping a row in the sheet fires
+  `Intent.SelectCountry(c)` → reducer:
+  - `state.country = c`
+  - **Keeps `state.phoneRaw` unchanged** (user's typed digits preserved).
+  - Re-runs `AuthCountryFormatter.format(c, raw)` and `isValid(c, raw)` to
+    rebuild `phoneFormatted` and `isValid` against the new country.
+  - `state.countrySelectorOpen = false`.
+  - Does **not** persist to `CountryStore` here — only on submit success.
+- **Dismiss selector.** Tap outside / system back fires
+  `Intent.CloseCountrySelector` → reducer sets
+  `state.countrySelectorOpen = false`.
+- **Submit.** `Intent.Submit` runs the executor:
   - Sets `state.submitting = true`.
-  - Computes E.164: `"+63" + cleanedDigits` (PH drop leading 0) or
+  - Computes E.164: `"+63" + cleanedDigits` (PH, strip any leading "0") or
     `"+65" + cleanedDigits` (SG).
   - Calls `AuthRepository.loginOtp(phoneE164, country) → Outcome<Unit>`.
-  - On `Outcome.Success`: emit `Label.NavigateToOtpSent(phoneE164)`,
-    set `submitting = false`.
-  - On `Outcome.Failure(error)`: set `submitting = false`, `error =
-    <human-readable message from ErrorMapper>`. No label.
+  - On `Outcome.Success`:
+    - `CountryStore.write(country)` — country is committed now.
+    - Emit `Label.NavigateToOtpSent(phoneE164)`.
+    - Set `submitting = false`.
+  - On `Outcome.Failure(error)`:
+    - Set `submitting = false`, `error = <human message from ErrorMapper>`.
+    - **Do not** persist country (user might still switch and retry).
+    - No label.
 
-### 12.3 Screen 3: OTP Sent (placeholder terminal)
+**Persistence model:**
+- `CountryStore` is written **once**, on the first successful submit. On
+  subsequent app launches the bootstrapper finds it and uses it without
+  redetection.
+- Detector failures and the PH default are **not** persisted on first
+  launch — only an explicit success persists. Avoids locking in a wrong
+  default for users who would switch before submitting.
+
+### 12.2 Screen 2: OTP Sent (placeholder terminal)
 
 **Trigger:** `Label.NavigateToOtpSent(phoneE164)` from the login store.
 
@@ -586,7 +635,7 @@ no token (token tracking is foundation-only — never written by this slice).
 **Behavior:** completely static. No timers, no inputs, no retry. The slice
 terminates here.
 
-### 12.4 AuthCountryFormatter contract
+### 12.3 AuthCountryFormatter contract
 
 ```kotlin
 object AuthCountryFormatter {
@@ -601,7 +650,12 @@ object AuthCountryFormatter {
   "### ### ####". Strip leading "0" if user typed one.
 - SG: 8 digits after prefix (e.g., 81234567). Display mask "#### ####".
 
-### 12.5 AuthApi & AuthRepository contracts (this slice)
+`clean(country, raw)` is the pivot used on country switch: keep the cleaned
+digits, then re-`format()` against the new country. If the digits exceed
+the new country's expected length, truncate to the max (e.g., 10 PH digits
+typed → switch to SG → keep first 8).
+
+### 12.4 AuthApi & AuthRepository contracts (this slice)
 
 ```kotlin
 // data/net/api — wire-level contract
@@ -632,21 +686,23 @@ exclusively via `ApiPostService` with `GetRequest`-style wrapped bodies —
 the slice's DTOs will be revised to match once that shape is read from
 source. Tracked under §10 risk #6.
 
-### 12.6 Navigation graph
+### 12.5 Navigation graph
 
 ```kotlin
 sealed interface Destination {
-  data object CountryPicker : Destination
-  data object LoginOtp : Destination
-  data class OtpSent(val phoneE164: String) : Destination
+  @Serializable data object LoginOtp : Destination
+  @Serializable data class OtpSent(val phoneE164: String) : Destination
 }
 ```
 
-Start destination: `CountryPicker` if `CountryStore.read() == null`,
-else `LoginOtp`. Argument passing for `OtpSent` uses Compose Navigation's
-type-safe routes (`kotlinx.serialization`-backed `@Serializable` route
-objects, supported in the current `androidx.navigation` multiplatform
-artifact — verify version at first compile per §10 risk #2).
+Start destination: **always `LoginOtp`**. The bootstrapper inside
+`LoginOtpStore` decides which country pre-fills the chip (no separate
+picker screen).
+
+Argument passing for `OtpSent` uses Compose Navigation's type-safe routes
+(`kotlinx.serialization`-backed `@Serializable` route objects, supported in
+the current `androidx.navigation` multiplatform artifact — verify version
+at first compile per §10 risk #2).
 
 ## 13. Glossary
 
