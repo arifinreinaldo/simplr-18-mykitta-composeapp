@@ -13,16 +13,12 @@ actual object BuildEnv {
             else -> Flavor.Dev
         }
     }
-    actual val baseUrl: String by lazy { infoString("MYKITTA_BASE_URL") }
+    actual val baseUrl: String get() = FlavorConfig.baseUrl.getValue(flavor)
+    actual val appName: String get() = FlavorConfig.appName.getValue(flavor)
     actual val versionName: String by lazy {
         infoString("CFBundleShortVersionString").ifEmpty { "0.0" }
     }
     actual val isDebug: Boolean by lazy {
         infoString("MYKITTA_IS_DEBUG").equals("true", ignoreCase = true)
-    }
-    actual val appName: String by lazy {
-        infoString("MYKITTA_APP_NAME").ifEmpty {
-            infoString("CFBundleDisplayName").ifEmpty { "MyKitta" }
-        }
     }
 }

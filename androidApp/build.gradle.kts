@@ -61,6 +61,8 @@ android {
         buildConfig = true
     }
 
+    // URLs and display name come from .env via :shared:generateBuildEnv; flavors
+    // here only need to identify themselves so BuildEnv can pick the right Flavor.
     flavorDimensions += "env"
     productFlavors {
         create("dev") {
@@ -68,22 +70,16 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("String", "FLAVOR_NAME", "\"dev\"")
-            buildConfigField("String", "BASE_URL", "\"https://dev.mykitta.example/api/\"")
-            buildConfigField("String", "APP_NAME", "\"MyKitta Dev\"")
         }
         create("staging") {
             dimension = "env"
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
             buildConfigField("String", "FLAVOR_NAME", "\"staging\"")
-            buildConfigField("String", "BASE_URL", "\"https://staging.mykitta.example/api/\"")
-            buildConfigField("String", "APP_NAME", "\"MyKitta Staging\"")
         }
         create("prod") {
             dimension = "env"
             buildConfigField("String", "FLAVOR_NAME", "\"prod\"")
-            buildConfigField("String", "BASE_URL", "\"https://api.mykitta.example/api/\"")
-            buildConfigField("String", "APP_NAME", "\"MyKitta\"")
         }
     }
 
