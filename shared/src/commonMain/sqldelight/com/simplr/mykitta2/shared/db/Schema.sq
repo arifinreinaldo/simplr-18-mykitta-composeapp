@@ -1,0 +1,5 @@
+-- Foundation schema is intentionally empty; features add their own .sq files.
+CREATE TABLE IF NOT EXISTS Meta (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
