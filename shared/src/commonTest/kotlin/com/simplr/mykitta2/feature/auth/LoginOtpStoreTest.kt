@@ -9,6 +9,7 @@ import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.prefs.CountryStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.domain.Country
+import com.simplr.mykitta2.domain.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -61,7 +62,9 @@ class LoginOtpStoreTest {
             userIdDigits: String,
             otp: String,
             country: Country,
-        ): Outcome<Unit> = Outcome.Success(Unit)
+        ): Outcome<Session> = Outcome.Success(
+            Session(userName = "user", supervisorCode = "S1", isSupervisor = false)
+        )
     }
 
     private class Harness(
