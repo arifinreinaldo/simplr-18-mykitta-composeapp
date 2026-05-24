@@ -9,7 +9,7 @@ import com.simplr.mykitta2.domain.Country
 import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
-import com.simplr.mykitta2.feature.home.HomeScreen
+import com.simplr.mykitta2.feature.main.MainShell
 
 @Composable
 fun AppNavHost() {
@@ -50,7 +50,9 @@ fun AppNavHost() {
             )
         }
         composable<Destination.Home> {
-            HomeScreen()
+            // `Home` is the signed-in entry point; MainShell owns the bottom-nav
+            // and the per-tab child NavController.
+            MainShell()
         }
         // Retained for tests / debug routing; no longer reachable from the OTP
         // verify path. Safe to remove once nothing references it.
