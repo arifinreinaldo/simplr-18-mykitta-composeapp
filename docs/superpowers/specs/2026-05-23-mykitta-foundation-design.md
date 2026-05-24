@@ -296,6 +296,37 @@ sealed interface Destination {
   recomposes the tree on change.
 - Currency / number formatting via `kotlinx-datetime` + platform `expect`s.
 
+### 4.10 Network observability (Chucker, Android-only)
+
+**Goal:** in-app HTTP traffic inspection during development without an
+external proxy.
+
+**Choice:** [Chucker](https://github.com/ChuckerTeam/chucker) v4.x as an
+OkHttp `Interceptor`. Captures every request/response (headers, body,
+timing) and exposes them via a notification + in-app activity.
+
+**Wiring:**
+
+- `:shared/androidMain` exposes `AndroidNetworkConfig.interceptors: MutableList<Interceptor>`.
+- The platform Ktor builder (`createPlatformHttpClient(...)` `expect`/`actual`)
+  applies this list to OkHttp's engine config at construction time.
+- `MyKittaApplication.onCreate()` adds a `ChuckerInterceptor` to that list
+  **before** `initKoin {}` runs, so the singleton `HttpClient` picks it up.
+- Gradle: `debugImplementation(libs.chucker)` + `releaseImplementation(libs.chucker.noOp)`.
+  The no-op artifact ships a stub `ChuckerInterceptor` with the same API
+  surface — `MyKittaApplication` compiles unchanged for release; the
+  interceptor is a pass-through in production.
+
+**iOS counterpart:** **none.** No equivalent in-app inspector exists for
+the Darwin engine. Out-of-band tooling (Charles, Proxyman, mitmproxy) is
+the path. Ktor's `Logging` plugin still writes to the iOS console via
+`AppLogger`, which is enough for most cases.
+
+**Trade-off:** Chucker requires `POST_NOTIFICATIONS` permission on API 33+
+(its manifest merges this in automatically). The notification is the only
+UI affordance — without it, the user wouldn't know inspection was running.
+Acceptable for a dev convenience.
+
 ## 5. Smoke-Test Data Flow (Auth Slice)
 
 The end-to-end flow exercised by sub-project 1:
@@ -481,14 +512,21 @@ The following are **out** of sub-project 1 and ship in later sub-projects:
    actuals (libphonenumber on Android, hand-rolled or PhoneNumberKit via
    SPM on iOS).
 
-6. **Exact `doLoginOTP` endpoint contract.** The wiki names
-   `Repository.kt:366-451` as the auth surface but does not capture the URL
-   path, request body shape, or response shape. **Open:** read the legacy
-   `Repository.kt` + `ApiPostService.kt` source (or coordinate with backend
-   owner) to lock the endpoint path, request envelope (likely a wrapped
-   `GetRequest`-style POST body), and response shape. Spec assumes
-   `POST /login/otp` with `{ phone: "+63...", country: "PHILIPPINE"|"SINGAPORE" }`
-   placeholder; **revise during implementation when the real shape is known**.
+6. **Exact `doLoginOTP` endpoint contract — RESOLVED (2026-05-24).**
+   Confirmed against `B2B.postman_collection.json` (saved at the repo root):
+   - **Path:** `POST {baseUrl}Account/LoginOTP` (mixed case, not `/login/otp`).
+   - **Request body:** `{ "userId": "<local-digits>", "country": "<dial-code-no-plus>" }`,
+     e.g. `{ "userId": "9171234567", "country": "63" }`. **Not** E.164,
+     **not** the `"PHILIPPINE"` legacy wire-format. `Country.apiCountryCode`
+     holds the right value (`"63"` / `"65"`); `Country.wireFormat` is
+     retained for `CountryStore` persistence only.
+   - **Response shape:** the collection's saved-response array is empty
+     for this endpoint. HTTP 200 is treated as success without body parsing
+     (`KtorAuthApi.loginOtp` returns `Unit`). `ErrorMapper` translates
+     non-2xx. **Revise to parse the envelope once VerifyLoginOTP lands** —
+     that endpoint will need fields back (token, principal-pending state),
+     at which point the standard `{ XxxResult: { errorData: {code,description}, ... } }`
+     B2B envelope visible elsewhere in the collection should be modeled.
 
 7. **Country detection on iOS.** Android uses `TelephonyManager.networkCountryIso`.
    iOS equivalent is `CTTelephonyNetworkInfo` + `CTCarrier.isoCountryCode`,
@@ -657,34 +695,59 @@ typed → switch to SG → keep first 8).
 
 ### 12.4 AuthApi & AuthRepository contracts (this slice)
 
+**Confirmed against `B2B.postman_collection.json` (2026-05-24).**
+
 ```kotlin
 // data/net/api — wire-level contract
 interface AuthApi {
-  suspend fun loginOtp(req: LoginOtpRequest): LoginOtpResponse
+  // HTTP 200 = SMS sent. No body parsing — the collection's saved response
+  // is empty and this slice doesn't need anything back. ErrorMapper translates non-2xx.
+  suspend fun loginOtp(request: LoginOtpRequest)
 }
+
 @Serializable data class LoginOtpRequest(
-  val phone: String,          // E.164, e.g. "+639171234567"
-  val country: String,        // wire-format: "PHILIPPINE" | "SINGAPORE"
+  val userId: String,   // local digits only, no "+", no country code, no leading "0"
+  val country: String,  // dial code without "+" — e.g. "63" (PH) or "65" (SG)
 )
-@Serializable data class LoginOtpResponse(val success: Boolean, val message: String?)
 
 // data/repo — domain-level contract
 interface AuthRepository {
-  suspend fun loginOtp(phoneE164: String, country: Country): Outcome<Unit>
+  // userIdDigits = country-local digits only; AuthRepository wraps it into
+  // the LoginOtpRequest and maps Country.apiCountryCode into `country`.
+  suspend fun loginOtp(userIdDigits: String, country: Country): Outcome<Unit>
 }
 ```
 
-`AuthRepository` maps `(phoneE164, country)` → `LoginOtpRequest`, calls
-`AuthApi`, then wraps response/throwables through `ErrorMapper` into
-`Outcome<Unit>`. The repository is the sole consumer of `AuthApi` —
-ViewModels never touch the API directly.
+**Path:** `POST {baseUrl}Account/LoginOTP` (mixed-case; matches the
+Postman collection verbatim).
 
-**Exact URL path, body envelope, and response shape:** placeholder until
-verified against legacy `Repository.kt` + `ApiPostService.kt`. The wiki
-(`llm_wiki/deep/repository.md`) confirms B2B-SIMPLR uses a POST surface
-exclusively via `ApiPostService` with `GetRequest`-style wrapped bodies —
-the slice's DTOs will be revised to match once that shape is read from
-source. Tracked under §10 risk #6.
+**Wire-level example:**
+
+```http
+POST http://simplronline.in:8800/api/Account/LoginOTP
+Content-Type: application/json
+
+{ "userId": "9171234567", "country": "63" }
+```
+
+The repository:
+1. Wraps `(userIdDigits, country)` into `LoginOtpRequest(userId = userIdDigits, country = country.apiCountryCode)`.
+2. Calls `AuthApi.loginOtp(request)`.
+3. On exception, routes through `ErrorMapper.from(throwable)` → `Outcome.Failure(AppError.*)`.
+4. On 2xx, returns `Outcome.Success(Unit)`.
+
+ViewModels never touch `AuthApi` directly — `AuthRepository` is the only
+caller.
+
+**The `Country.wireFormat` field (`"PHILIPPINE"` / `"SINGAPORE"`) is NOT
+sent on the wire.** It remains the persistence format for `CountryStore`
+(preserving the legacy `SharedPreferences` contract). The API uses
+`Country.apiCountryCode` (`"63"` / `"65"`).
+
+**Open for next sub-project (VerifyLoginOTP):** the response envelope.
+Postman shows other endpoints follow `{ XxxResult: { errorData: {code,description}, objectData: ... } }` —
+when the verify endpoint is wired, model that envelope and surface
+`errorData.code != 0` as `AppError.Http`-equivalent.
 
 ### 12.5 Navigation graph
 

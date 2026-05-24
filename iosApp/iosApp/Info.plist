@@ -4,5 +4,25 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!--
+		App Transport Security exception for the legacy B2B-SIMPLR backend, which
+		serves over plain HTTP. Targeted to specific domains rather than
+		NSAllowsArbitraryLoads = true, so the policy stays tight for everything
+		else. Add another <key>domain</key>...<dict>...</dict> pair when the SG
+		backend is provisioned, or migrate the backend to HTTPS and remove this.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>simplronline.in</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

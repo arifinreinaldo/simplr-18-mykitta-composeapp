@@ -35,6 +35,7 @@ dependencies {
     implementation(projects.shared)
 
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
 
@@ -44,6 +45,11 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+
+    // Chucker: in-app HTTP traffic inspector. Debug uses the real library; release
+    // uses the no-op variant so the same MyKittaApplication code compiles either way.
+    debugImplementation(libs.chucker)
+    releaseImplementation(libs.chucker.noOp)
 }
 
 android {

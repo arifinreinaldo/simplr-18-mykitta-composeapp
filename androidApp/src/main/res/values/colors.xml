@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backdrop of the adaptive launcher icon (matches the icon's own whitespace). -->
+    <color name="ic_launcher_background">#FFFFFFFF</color>
+
+    <!-- Brand colors, sampled from ic_b2b_launcher-playstore.png. Mirrored in Compose
+         via MyKittaTheme so XML system surfaces and Compose stay visually aligned. -->
+    <color name="brand_primary">#FF1565C0</color>
+    <color name="brand_secondary">#FFE53935</color>
+</resources>

@@ -1,6 +1,11 @@
 package com.simplr.mykitta2.data.net
 
-import io.ktor.client.engine.HttpClientEngineFactory
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.darwin.Darwin
 
-actual fun httpEngineFactory(): HttpClientEngineFactory<*> = Darwin
+actual fun createPlatformHttpClient(
+    config: HttpClientConfig<*>.() -> Unit,
+): HttpClient = HttpClient(Darwin) {
+    config()
+}

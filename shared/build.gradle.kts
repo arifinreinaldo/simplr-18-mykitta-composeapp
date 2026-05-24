@@ -32,7 +32,9 @@ abstract class GenerateBuildEnvTask : org.gradle.api.DefaultTask() {
     @org.gradle.api.tasks.TaskAction
     fun run() {
         val required = listOf(
-            "BASE_URL_DEV", "BASE_URL_STAGING", "BASE_URL_PROD",
+            "BASE_URL_DEV_PH", "BASE_URL_DEV_SG",
+            "BASE_URL_STAGING_PH", "BASE_URL_STAGING_SG",
+            "BASE_URL_PROD_PH", "BASE_URL_PROD_SG",
             "APP_NAME_DEV", "APP_NAME_STAGING", "APP_NAME_PROD",
         )
         val file = envFile.get().asFile
@@ -47,7 +49,18 @@ abstract class GenerateBuildEnvTask : org.gradle.api.DefaultTask() {
             .associate { line ->
                 val idx = line.indexOf('=')
                 require(idx > 0) { "Invalid .env line (missing '='): $line" }
-                line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+                val key = line.substring(0, idx).trim()
+                val raw = line.substring(idx + 1).trim()
+                // Strip matching surrounding quotes (standard .env supports both ' and ")
+                val value = if (raw.length >= 2 &&
+                    ((raw.startsWith('"') && raw.endsWith('"')) ||
+                        (raw.startsWith('\'') && raw.endsWith('\'')))
+                ) {
+                    raw.substring(1, raw.length - 1)
+                } else {
+                    raw
+                }
+                key to value
             }
         val missing = required.filter { entries[it].isNullOrEmpty() }
         if (missing.isNotEmpty()) {
@@ -63,11 +76,16 @@ abstract class GenerateBuildEnvTask : org.gradle.api.DefaultTask() {
             |// Generated from .env by :shared:generateBuildEnv — do not edit by hand.
             |package com.simplr.mykitta2.core.env
             |
+            |import com.simplr.mykitta2.domain.Country
+            |
             |internal object FlavorConfig {
-            |    val baseUrl: Map<Flavor, String> = mapOf(
-            |        Flavor.Dev to "${esc(entries.getValue("BASE_URL_DEV"))}",
-            |        Flavor.Staging to "${esc(entries.getValue("BASE_URL_STAGING"))}",
-            |        Flavor.Prod to "${esc(entries.getValue("BASE_URL_PROD"))}",
+            |    val baseUrl: Map<Pair<Flavor, Country>, String> = mapOf(
+            |        (Flavor.Dev to Country.PH)     to "${esc(entries.getValue("BASE_URL_DEV_PH"))}",
+            |        (Flavor.Dev to Country.SG)     to "${esc(entries.getValue("BASE_URL_DEV_SG"))}",
+            |        (Flavor.Staging to Country.PH) to "${esc(entries.getValue("BASE_URL_STAGING_PH"))}",
+            |        (Flavor.Staging to Country.SG) to "${esc(entries.getValue("BASE_URL_STAGING_SG"))}",
+            |        (Flavor.Prod to Country.PH)    to "${esc(entries.getValue("BASE_URL_PROD_PH"))}",
+            |        (Flavor.Prod to Country.SG)    to "${esc(entries.getValue("BASE_URL_PROD_SG"))}",
             |    )
             |    val appName: Map<Flavor, String> = mapOf(
             |        Flavor.Dev to "${esc(entries.getValue("APP_NAME_DEV"))}",
@@ -92,10 +110,21 @@ kotlin {
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->
+        val isSimulator = iosTarget.konanTarget.name.contains("simulator", ignoreCase = true)
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
             export(libs.mvikotlin.core)
+            // SQLDelight's NativeSqliteDriver calls into libsqlite3 — without this
+            // the iosApp link step fails with 31 undefined `_sqlite3_*` symbols.
+            linkerOpts.add("-lsqlite3")
+            // Pin the framework's Mach-O min-OS metadata so it matches
+            // IPHONEOS_DEPLOYMENT_TARGET in iosApp/Configuration/Config.xcconfig.
+            // Drift in either direction re-triggers "object file built for newer
+            // iOS-simulator version than being linked".
+            linkerOpts.add(
+                if (isSimulator) "-mios-simulator-version-min=15.0" else "-mios-version-min=15.0"
+            )
         }
     }
 

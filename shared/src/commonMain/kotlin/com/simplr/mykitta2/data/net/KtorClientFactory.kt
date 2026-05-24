@@ -5,7 +5,6 @@ import com.simplr.mykitta2.core.logging.AppLogger
 import com.simplr.mykitta2.data.prefs.TokenStore
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
-import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.UserAgent
 import io.ktor.client.plugins.auth.Auth
@@ -22,19 +21,22 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 object KtorClientFactory {
+    /**
+     * Builds the shared HttpClient. No default base URL — every API surface is
+     * expected to provide an absolute URL per call (resolved via BackendDirectory)
+     * because backends differ per country.
+     */
     fun create(
         tokenStore: TokenStore,
         appLogger: AppLogger,
-        engineFactory: HttpClientEngineFactory<*> = httpEngineFactory(),
-        baseUrl: String = BuildEnv.baseUrl,
         isDebug: Boolean = BuildEnv.isDebug,
-    ): HttpClient = HttpClient(engineFactory) {
+    ): HttpClient = createPlatformHttpClient {
         expectSuccess = true
         installContentNegotiation()
         installLogging(appLogger, isDebug)
         installTimeouts()
         installAuth(tokenStore)
-        installDefaults(baseUrl)
+        installDefaults()
     }
 
     private fun HttpClientConfig<*>.installContentNegotiation() {
@@ -49,7 +51,10 @@ object KtorClientFactory {
 
     private fun HttpClientConfig<*>.installLogging(appLogger: AppLogger, isDebug: Boolean) {
         install(Logging) {
-            level = if (isDebug) LogLevel.HEADERS else LogLevel.INFO
+            // BODY in debug so request/response payloads are visible without Chucker
+            // (on iOS especially). Authorization is still scrubbed by sanitizeHeader,
+            // and the message-level regex catches it in body dumps too.
+            level = if (isDebug) LogLevel.BODY else LogLevel.INFO
             logger = object : Logger {
                 override fun log(message: String) {
                     appLogger.d("Ktor") { redact(message) }
@@ -74,17 +79,17 @@ object KtorClientFactory {
                     tokenStore.read()?.let { BearerTokens(it.access, it.refresh) }
                 }
                 refreshTokens {
-                    // Refresh endpoint wiring lands with the OTP-verify sub-project.
+                    // Refresh endpoint wiring lands with the OTP-verify sub-project. It will
+                    // need to know the active country to pick the right backend — defer until then.
                     tokenStore.read()?.let { BearerTokens(it.access, it.refresh) }
                 }
             }
         }
     }
 
-    private fun HttpClientConfig<*>.installDefaults(baseUrl: String) {
+    private fun HttpClientConfig<*>.installDefaults() {
         install(UserAgent) { agent = "MyKitta/${BuildEnv.versionName} (${BuildEnv.flavor.name})" }
         defaultRequest {
-            if (baseUrl.isNotEmpty()) url(baseUrl)
             headers.append(HttpHeaders.Accept, ContentType.Application.Json.toString())
         }
     }
