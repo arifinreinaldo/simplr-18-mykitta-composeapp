@@ -9,6 +9,7 @@ import com.simplr.mykitta2.domain.Country
 import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
+import com.simplr.mykitta2.feature.home.HomeScreen
 
 @Composable
 fun AppNavHost() {
@@ -38,13 +39,21 @@ fun AppNavHost() {
                 userIdDigits = route.userIdDigits,
                 country = country,
                 onVerified = {
-                    navController.navigate(Destination.SignedIn) {
+                    // Post-OTP lands on Home directly; the auth back-stack is dropped
+                    // so the system Back button on Home exits the app instead of
+                    // bouncing the user back to the login flow.
+                    navController.navigate(Destination.Home) {
                         popUpTo(Destination.LoginOtp) { inclusive = true }
                     }
                 },
                 onBack = { navController.popBackStack() },
             )
         }
+        composable<Destination.Home> {
+            HomeScreen()
+        }
+        // Retained for tests / debug routing; no longer reachable from the OTP
+        // verify path. Safe to remove once nothing references it.
         composable<Destination.SignedIn> {
             SignedInPlaceholderScreen(
                 onBackToLogin = {

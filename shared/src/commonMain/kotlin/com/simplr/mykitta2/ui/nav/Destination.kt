@@ -20,4 +20,7 @@ sealed interface Destination {
 
     @Serializable
     data object SignedIn : Destination
+
+    @Serializable
+    data object Home : Destination
 }

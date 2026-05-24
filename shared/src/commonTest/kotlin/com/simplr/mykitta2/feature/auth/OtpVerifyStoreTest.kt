@@ -7,6 +7,7 @@ import com.simplr.mykitta2.core.error.AppError
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.domain.Country
+import com.simplr.mykitta2.domain.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -32,8 +33,12 @@ class OtpVerifyStoreTest {
     @BeforeTest fun setUp() { Dispatchers.setMain(dispatcher) }
     @AfterTest fun tearDown() { Dispatchers.resetMain() }
 
+    private val defaultSession = Session(userName = "user", supervisorCode = "S1", isSupervisor = false)
+
     private class FakeAuthRepository(
-        var verifyResult: Outcome<Unit> = Outcome.Success(Unit),
+        var verifyResult: Outcome<Session> = Outcome.Success(
+            Session(userName = "user", supervisorCode = "S1", isSupervisor = false)
+        ),
         var loginResult: Outcome<Unit> = Outcome.Success(Unit),
     ) : AuthRepository, JvmSerializable {
         val verifyCalls = mutableListOf<Triple<String, String, Country>>()
@@ -46,7 +51,7 @@ class OtpVerifyStoreTest {
             userIdDigits: String,
             otp: String,
             country: Country,
-        ): Outcome<Unit> {
+        ): Outcome<Session> {
             verifyCalls += Triple(userIdDigits, otp, country)
             return verifyResult
         }

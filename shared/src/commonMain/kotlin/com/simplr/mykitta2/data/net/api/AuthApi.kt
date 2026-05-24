@@ -2,7 +2,9 @@ package com.simplr.mykitta2.data.net.api
 
 import com.simplr.mykitta2.data.net.dto.LoginOtpRequest
 import com.simplr.mykitta2.data.net.dto.VerifyLoginOtpRequest
+import com.simplr.mykitta2.data.net.dto.VerifyLoginOtpResponse
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -19,11 +21,11 @@ interface AuthApi {
     suspend fun loginOtp(baseUrl: String, request: LoginOtpRequest)
 
     /**
-     * Verifies the OTP sent by [loginOtp]. Backend response envelope isn't
-     * documented in the Postman collection — when confirmed, parse and return
-     * the token here instead of [Unit].
+     * Verifies the OTP sent by [loginOtp]. Returns the full session envelope —
+     * token (used by [com.simplr.mykitta2.data.prefs.TokenStore]) and user profile
+     * (used by [com.simplr.mykitta2.data.prefs.SessionStore]).
      */
-    suspend fun verifyLoginOtp(baseUrl: String, request: VerifyLoginOtpRequest)
+    suspend fun verifyLoginOtp(baseUrl: String, request: VerifyLoginOtpRequest): VerifyLoginOtpResponse
 }
 
 class KtorAuthApi(private val client: HttpClient) : AuthApi {
@@ -35,11 +37,14 @@ class KtorAuthApi(private val client: HttpClient) : AuthApi {
         }
     }
 
-    override suspend fun verifyLoginOtp(baseUrl: String, request: VerifyLoginOtpRequest) {
+    override suspend fun verifyLoginOtp(
+        baseUrl: String,
+        request: VerifyLoginOtpRequest,
+    ): VerifyLoginOtpResponse {
         val url = URLBuilder().takeFrom(baseUrl).appendPathSegments("Account", "VerifyLoginOTP").build()
-        client.post(url) {
+        return client.post(url) {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }
+        }.body()
     }
 }

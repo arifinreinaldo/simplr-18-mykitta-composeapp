@@ -7,19 +7,27 @@ import com.simplr.mykitta2.core.mvi.BaseStoreFactory
 import com.simplr.mykitta2.data.db.DatabaseFactory
 import com.simplr.mykitta2.data.net.KtorClientFactory
 import com.simplr.mykitta2.data.net.api.AuthApi
+import com.simplr.mykitta2.data.net.api.CatalogApi
 import com.simplr.mykitta2.data.net.api.KtorAuthApi
+import com.simplr.mykitta2.data.net.api.KtorCatalogApi
 import com.simplr.mykitta2.data.prefs.CountryStore
+import com.simplr.mykitta2.data.prefs.SessionStore
 import com.simplr.mykitta2.data.prefs.SettingsCountryStore
 import com.simplr.mykitta2.data.prefs.SettingsFactory
+import com.simplr.mykitta2.data.prefs.SettingsSessionStore
 import com.simplr.mykitta2.data.prefs.SettingsTokenStore
 import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
+import com.simplr.mykitta2.data.repo.DefaultHomeRepository
+import com.simplr.mykitta2.data.repo.HomeRepository
 import com.simplr.mykitta2.feature.auth.LoginOtpStoreFactory
 import com.simplr.mykitta2.feature.auth.LoginOtpViewModel
 import com.simplr.mykitta2.feature.auth.OtpVerifyArgs
 import com.simplr.mykitta2.feature.auth.OtpVerifyStoreFactory
 import com.simplr.mykitta2.feature.auth.OtpVerifyViewModel
+import com.simplr.mykitta2.feature.home.HomeStoreFactory
+import com.simplr.mykitta2.feature.home.HomeViewModel
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModelOf
@@ -40,6 +48,9 @@ val prefsModule = module {
     single<CountryStore> {
         SettingsCountryStore(get<SettingsFactory>().plainSettings("mykitta.prefs"))
     }
+    single<SessionStore> {
+        SettingsSessionStore(get<SettingsFactory>().plainSettings("mykitta.session"))
+    }
 }
 
 val databaseModule = module {
@@ -55,10 +66,16 @@ val networkModule = module {
         )
     }
     single<AuthApi> { KtorAuthApi(get()) }
+    single<CatalogApi> { KtorCatalogApi(get()) }
 }
 
 val repositoryModule = module {
-    single<AuthRepository> { DefaultAuthRepository(get()) }
+    single<AuthRepository> {
+        DefaultAuthRepository(api = get(), tokenStore = get(), sessionStore = get())
+    }
+    single<HomeRepository> {
+        DefaultHomeRepository(catalogApi = get(), sessionStore = get(), countryStore = get())
+    }
 }
 
 val featureAuthModule = module {
@@ -85,6 +102,11 @@ val featureAuthModule = module {
     factory { (args: OtpVerifyArgs) -> OtpVerifyViewModel(storeFactory = get { parametersOf(args) }) }
 }
 
+val featureHomeModule = module {
+    factory { HomeStoreFactory(storeFactory = get(), homeRepository = get()) }
+    viewModelOf(::HomeViewModel)
+}
+
 fun commonModules(): List<Module> = listOf(
     coreModule,
     prefsModule,
@@ -92,6 +114,7 @@ fun commonModules(): List<Module> = listOf(
     networkModule,
     repositoryModule,
     featureAuthModule,
+    featureHomeModule,
 )
 
 expect val platformModule: Module

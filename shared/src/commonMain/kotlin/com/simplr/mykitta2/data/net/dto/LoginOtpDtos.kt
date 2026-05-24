@@ -27,3 +27,27 @@ data class VerifyLoginOtpRequest(
     val otp: String,
     @SerialName("firebase_token") val firebaseToken: String = "",
 )
+
+/**
+ * POST Account/VerifyLoginOTP response envelope (legacy `LoginServerResponse`).
+ *
+ * - `validaty` field name is misspelled in the backend response — preserved verbatim
+ *   via `@SerialName` (DO NOT correct; backend contract is frozen).
+ * - `isSupervisor` arrives as the string `"True"` / `"False"`, not a JSON bool.
+ *   Caller converts via `parseIsSupervisor()`.
+ * - `refreshToken` is nullable.
+ */
+@Serializable
+data class VerifyLoginOtpResponse(
+    val token: String,
+    val refreshToken: String? = null,
+    val expiredTime: String,
+    @SerialName("validaty") val validaty: String,
+    val guidId: String,
+    val id: String,
+    val userName: String,
+    val isSupervisor: String,
+    val supervisorCode: String,
+) {
+    fun parseIsSupervisor(): Boolean = isSupervisor.equals("True", ignoreCase = true)
+}
