@@ -41,12 +41,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Item
@@ -170,12 +173,24 @@ private fun BannerCarousel(
                 }
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                     val banner = banners[page]
+                    val fallback = ColorPainter(bannerSwatch(page))
                     Surface(
                         onClick = { onClick(banner) },
                         color = bannerSwatch(page),
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = banner.bannerImg,
+                                contentDescription = banner.bannerName,
+                                contentScale = ContentScale.Crop,
+                                placeholder = fallback,
+                                error = fallback,
+                                fallback = fallback,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            // Banner-name caption — overlaid on the image with the
+                            // swatch colour as backdrop in case the image is dark.
                             Text(
                                 text = banner.bannerName,
                                 color = Color.White,
@@ -237,7 +252,7 @@ private fun ItemCard(item: Item, onClick: () -> Unit) {
         modifier = Modifier.width(140.dp),
     ) {
         Column(Modifier.padding(8.dp)) {
-            // Image placeholder — AsyncImage / Coil 3 wiring lands in a follow-up.
+            val swatch = ColorPainter(itemSwatch(item.productId))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -246,7 +261,18 @@ private fun ItemCard(item: Item, onClick: () -> Unit) {
                     .background(itemSwatch(item.productId)),
                 contentAlignment = Alignment.Center,
             ) {
+                AsyncImage(
+                    model = item.productUrl,
+                    contentDescription = item.productDesc,
+                    contentScale = ContentScale.Crop,
+                    placeholder = swatch,
+                    error = swatch,
+                    fallback = swatch,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 if (item.isSoldOut) {
+                    // Re-overlay on top of the loaded image so the badge stays
+                    // visible regardless of which state Coil settles on.
                     Text("SOLD OUT", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }

@@ -193,6 +193,12 @@ kotlin {
             implementation(libs.multiplatformSettings.core)
             implementation(libs.multiplatformSettings.coroutines)
 
+            // Coil 3 (KMP). `coil-network-ktor3` reuses our existing HttpClient
+            // for image requests instead of spinning up a second engine — keeps
+            // the connection pool + interceptor stack (Chucker on debug) shared.
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor3)
+
             implementation(libs.kermit)
         }
         commonTest.dependencies {

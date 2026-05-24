@@ -28,6 +28,7 @@ mvikotlin = "4.3.0"
 sqldelight = "2.1.0"
 firebase-bom = "33.7.0"
 chucker = "4.0.0"
+coil = "3.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -99,6 +100,9 @@ firebase-analytics = { module = "com.google.firebase:firebase-analytics-ktx" }
 
 chucker = { module = "com.github.chuckerteam.chucker:library", version.ref = "chucker" }
 chucker-noOp = { module = "com.github.chuckerteam.chucker:library-no-op", version.ref = "chucker" }
+
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
