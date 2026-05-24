@@ -80,6 +80,13 @@ fun HomeScreen(
         }
     }
 
+    // Surface repository failures the store funnels into state.error. Keying on
+    // the error string means re-showing if a retry surfaces the same message
+    // (store nulls error on RefreshStarted so the key transitions X → null → X).
+    LaunchedEffect(state.error) {
+        state.error?.let { snackbarHostState.showSnackbar(it) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

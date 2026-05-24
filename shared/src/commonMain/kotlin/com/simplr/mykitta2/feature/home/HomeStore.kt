@@ -11,6 +11,7 @@ import com.simplr.mykitta2.data.repo.HomeRepository
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Item
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 interface HomeStore : Store<HomeStore.Intent, HomeStore.State, HomeStore.Label> {
@@ -120,7 +121,11 @@ class HomeStoreFactory(
                 when (val outcome = homeRepository.loadConfigRails()) {
                     is Outcome.Success -> {
                         dispatch(Message.RailsDeclared(outcome.value))
-                        outcome.value.forEach { rail ->
+                        // joinAll so onFinished waits for every rail's items to
+                        // settle (success or failure) before flipping refreshing
+                        // off — otherwise pull-to-refresh "completes" while the
+                        // rails are still spinning their per-row indicators.
+                        val railJobs = outcome.value.map { rail ->
                             scope.launch {
                                 when (val items = homeRepository.loadRailItems(rail.functionName)) {
                                     is Outcome.Success ->
@@ -131,6 +136,7 @@ class HomeStoreFactory(
                                 }
                             }
                         }
+                        railJobs.joinAll()
                     }
                     is Outcome.Failure -> {
                         dispatch(Message.RailsDeclared(emptyList()))
