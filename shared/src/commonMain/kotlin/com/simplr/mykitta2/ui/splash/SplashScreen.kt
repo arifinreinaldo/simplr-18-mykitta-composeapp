@@ -98,7 +98,7 @@ fun SplashScreen(onFinished: () -> Unit) {
                         translationY = mTransY.value * density
                     },
             ) {
-                drawSlice(bitmap, srcX = 60, srcY = 30, srcW = 230, srcH = 315)
+                drawSlice(bitmap, srcX = 60, srcY = 30, srcW = 210, srcH = 315)
             }
 
             // Layer 2 — red shopping bag
@@ -110,7 +110,7 @@ fun SplashScreen(onFinished: () -> Unit) {
                         translationX = bagTransX.value * density
                     },
             ) {
-                drawSlice(bitmap, srcX = 255, srcY = 120, srcW = 190, srcH = 235)
+                drawSlice(bitmap, srcX = 280, srcY = 120, srcW = 190, srcH = 235)
             }
 
             // Layer 3 — "MyKitaa" wordmark

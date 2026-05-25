@@ -192,19 +192,10 @@ private fun LoginOtpContent(
 
 @Composable
 private fun BrandHeader() {
-    // Soft brand-blue tinted halo behind the logo for visual weight.
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(108.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(108.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                    shape = RoundedCornerShape(28.dp),
-                ),
-        )
         Image(
             painter = painterResource(Res.drawable.app_logo),
             contentDescription = null,
