@@ -24,8 +24,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import com.simplr.mykitta2.feature.home.HomeScreen
+import com.simplr.mykitta2.feature.principal.PrincipalScreen
 import com.simplr.mykitta2.feature.profile.ProfileScreen
+import com.simplr.mykitta2.ui.common.PlatformBackButton
 import com.simplr.mykitta2.ui.nav.MainTab
 
 /**
@@ -39,7 +42,9 @@ import com.simplr.mykitta2.ui.nav.MainTab
  * destinations when their screens land.
  */
 @Composable
-fun MainShell() {
+fun MainShell(
+    onOpenSearch: () -> Unit = {},
+) {
     val tabNavController = rememberNavController()
     val currentDest = tabNavController.currentBackStackEntryAsState().value?.destination
 
@@ -60,13 +65,57 @@ fun MainShell() {
                     onOpenChat = { /* Chat destination lands in a later phase. */ },
                     onOpenNotifications = { /* Notification destination lands in a later phase. */ },
                     onOpenRewards = { tabNavController.switchTab(MainTab.Rewards) },
+                    onOpenSearch = onOpenSearch,
                 )
             }
-            composable<MainTab.Principal> { TabStub("Principal") }
+            composable<MainTab.Principal> {
+                PrincipalScreen(
+                    onOpenCatalog = { principal ->
+                        tabNavController.navigate(
+                            MainTab.PrincipalCatalog(
+                                principalId = principal.principalId,
+                                principalName = principal.principalName,
+                            )
+                        )
+                    },
+                )
+            }
+            composable<MainTab.PrincipalCatalog> { backStackEntry ->
+                val route = backStackEntry.toRoute<MainTab.PrincipalCatalog>()
+                PrincipalCatalogStub(
+                    principalName = route.principalName,
+                    onBack = { tabNavController.popBackStack() },
+                )
+            }
             composable<MainTab.Rewards> { TabStub("Rewards") }
             composable<MainTab.Profile> {
                 ProfileScreen()
             }
+        }
+    }
+}
+
+/** Placeholder for the principal-scoped catalog. Real screen lands when the
+ *  catalog phase begins; for now it just acknowledges the tap and offers Back. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrincipalCatalogStub(principalName: String, onBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(principalName) },
+                navigationIcon = { PlatformBackButton(onClick = onBack) },
+            )
+        },
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "$principalName catalog — coming soon",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

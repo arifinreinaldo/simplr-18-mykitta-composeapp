@@ -10,6 +10,7 @@ import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
 import com.simplr.mykitta2.feature.main.MainShell
+import com.simplr.mykitta2.feature.search.SearchScreen
 import com.simplr.mykitta2.feature.splash.SplashStore
 
 @Composable
@@ -57,7 +58,12 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
         composable<Destination.Home> {
             // `Home` is the signed-in entry point; MainShell owns the bottom-nav
             // and the per-tab child NavController.
-            MainShell()
+            MainShell(
+                onOpenSearch = { navController.navigate(Destination.Search) },
+            )
+        }
+        composable<Destination.Search> {
+            SearchScreen(onBack = { navController.popBackStack() })
         }
         // Retained for tests / debug routing; no longer reachable from the OTP
         // verify path. Safe to remove once nothing references it.

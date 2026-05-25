@@ -29,6 +29,13 @@ interface HomeRepository {
     suspend fun loadRailItems(functionName: String): Outcome<List<Item>>
 
     suspend fun loadNotificationCount(): Outcome<Int>
+
+    /**
+     * Loyalty-points balance for the current supervisor. Legacy contract
+     * returns the count under `objectData[0][0].points`; a missing record
+     * collapses to 0 (i.e. the user has no loyalty balance yet).
+     */
+    suspend fun loadLoyaltyPoints(): Outcome<Int>
 }
 
 class DefaultHomeRepository(
@@ -65,6 +72,11 @@ class DefaultHomeRepository(
     override suspend fun loadNotificationCount(): Outcome<Int> = runCall {
         catalogApi.getNotificationCount(baseUrl(), supervisorRequest("GetNotificationCount"))
             .count()
+    }
+
+    override suspend fun loadLoyaltyPoints(): Outcome<Int> = runCall {
+        catalogApi.getLoyaltyPoints(baseUrl(), supervisorRequest("GetLoyaltyPoints"))
+            .points()
     }
 
     /** Active country dictates which backend; defaults to PH if none has been

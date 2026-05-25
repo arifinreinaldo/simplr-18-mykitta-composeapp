@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -24,7 +23,7 @@ fun MyKittaScaffold(
                     title = { if (title != null) Text(title) },
                     navigationIcon = {
                         if (onBack != null) {
-                            IconButton(onClick = onBack) { Text("←") }
+                            PlatformBackButton(onClick = onBack)
                         }
                     },
                 )

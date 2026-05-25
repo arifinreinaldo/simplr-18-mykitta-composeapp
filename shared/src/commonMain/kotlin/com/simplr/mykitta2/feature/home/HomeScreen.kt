@@ -36,8 +36,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +70,7 @@ fun HomeScreen(
     onOpenChat: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenRewards: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = koinViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -93,7 +96,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MyKitta") },
+                title = { HomeSearchBar(onClick = onOpenSearch) },
                 actions = {
                     // material-icons-extended isn't in the deps yet — use plain text
                     // glyphs so this slice stays in the existing dep graph.
@@ -117,7 +120,34 @@ fun HomeScreen(
             onItemClick = { viewModel.accept(HomeStore.Intent.ItemClicked(it)) },
             onBannerClick = { viewModel.accept(HomeStore.Intent.BannerClicked(it)) },
             onOpenRewards = onOpenRewards,
+            onRefreshPoints = { viewModel.accept(HomeStore.Intent.RefreshPoints) },
         )
+    }
+}
+
+@Composable
+private fun HomeSearchBar(onClick: () -> Unit) {
+    // Looks like a text field, behaves like a button. Tapping it routes to the
+    // dedicated SearchScreen where a real TextField takes focus — keeps the
+    // home top bar inert so it doesn't steal IME focus on entry.
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().height(40.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("🔍", fontSize = 16.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Search Item Here",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -128,6 +158,7 @@ private fun HomeContent(
     onItemClick: (Item) -> Unit,
     onBannerClick: (Banner) -> Unit,
     onOpenRewards: () -> Unit,
+    onRefreshPoints: () -> Unit,
 ) {
     LazyColumn(
         modifier = modifier,
@@ -142,7 +173,12 @@ private fun HomeContent(
             )
         }
         item("points") {
-            PointsCard(points = state.points, onClick = onOpenRewards)
+            PointsCard(
+                points = state.points,
+                loading = state.pointsLoading,
+                onClick = onOpenRewards,
+                onRefresh = onRefreshPoints,
+            )
         }
         if (state.railsLoading) {
             item("rails-loading") {
@@ -160,7 +196,12 @@ private fun HomeContent(
 }
 
 @Composable
-private fun PointsCard(points: Int?, onClick: () -> Unit) {
+private fun PointsCard(
+    points: Int,
+    loading: Boolean,
+    onClick: () -> Unit,
+    onRefresh: () -> Unit,
+) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
@@ -179,20 +220,33 @@ private fun PointsCard(points: Int?, onClick: () -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
-                Text(
-                    // null while the loyalty endpoint isn't wired — show a
-                    // dash so the card layout is final but the number is
-                    // visibly pending. Switches to a formatted count once
-                    // HomeStore.State.points is non-null.
-                    text = points?.let { "${it.formatThousands()} pts" } ?: "— pts",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${points.formatThousands()} pts",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                    if (loading) {
+                        Box(
+                            modifier = Modifier.size(40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onRefresh) {
+                            Text("⟳", fontSize = 20.sp)
+                        }
+                    }
+                }
             }
             Text(
-                text = "Rewards  ›",
-                style = MaterialTheme.typography.labelLarge,
+                text = "Rewards",
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
@@ -234,43 +288,60 @@ private fun BannerCarousel(
             )
 
             else -> {
-                val pagerState = rememberPagerState(pageCount = { banners.size })
-                LaunchedEffect(banners.size) {
-                    if (banners.size <= 1) return@LaunchedEffect
+                // Infinite-scroll trick: pageCount is Int.MAX_VALUE so the user can
+                // swipe (and auto-advance can step) in either direction forever, with
+                // `page % realCount` mapping back into the real banner list. Initial
+                // page sits at a multiple of realCount near the middle of the range so
+                // there's effectively unbounded headroom both ways before overflowing.
+                // Falls back to a plain finite pager when there's only one banner.
+                val realCount = banners.size
+                val pagerState = rememberPagerState(
+                    initialPage = if (realCount > 1) {
+                        (Int.MAX_VALUE / 2) - (Int.MAX_VALUE / 2) % realCount
+                    } else 0,
+                    pageCount = { if (realCount > 1) Int.MAX_VALUE else realCount },
+                )
+                LaunchedEffect(realCount) {
+                    if (realCount <= 1) return@LaunchedEffect
                     while (true) {
                         delay(BANNER_AUTO_ADVANCE_SECONDS.seconds)
-                        val next = (pagerState.currentPage + 1) % banners.size
-                        pagerState.animateScrollToPage(next)
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
                     }
                 }
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    val banner = banners[page]
-                    val fallback = ColorPainter(bannerSwatch(page))
+                    val index = page % realCount
+                    val banner = banners[index]
+                    val fallback = ColorPainter(bannerSwatch(index))
+                    // Caption is a fallback affordance — only visible while the image is
+                    // loading, failed, or absent; once Coil reports Success the artwork
+                    // speaks for itself. Key on bannerImg so paging resets the state.
+                    var imageLoaded by remember(banner.bannerImg) { mutableStateOf(false) }
                     Surface(
                         onClick = { onClick(banner) },
-                        color = bannerSwatch(page),
+                        color = bannerSwatch(index),
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             AsyncImage(
                                 model = banner.bannerImg,
                                 contentDescription = banner.bannerName,
-                                contentScale = ContentScale.Crop,
+                                contentScale = ContentScale.FillBounds,
                                 placeholder = fallback,
                                 error = fallback,
                                 fallback = fallback,
+                                onSuccess = { imageLoaded = true },
                                 modifier = Modifier.fillMaxSize(),
                             )
-                            // Banner-name caption — overlaid on the image with the
-                            // swatch colour as backdrop in case the image is dark.
-                            Text(
-                                text = banner.bannerName,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 20.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(24.dp),
-                            )
+                            if (!imageLoaded) {
+                                Text(
+                                    text = banner.bannerName,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 20.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(24.dp),
+                                )
+                            }
                         }
                     }
                 }

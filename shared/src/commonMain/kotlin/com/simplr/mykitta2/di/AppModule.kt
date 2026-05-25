@@ -20,7 +20,9 @@ import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
+import com.simplr.mykitta2.data.repo.DefaultPrincipalRepository
 import com.simplr.mykitta2.data.repo.HomeRepository
+import com.simplr.mykitta2.data.repo.PrincipalRepository
 import com.simplr.mykitta2.feature.auth.LoginOtpStoreFactory
 import com.simplr.mykitta2.feature.auth.LoginOtpViewModel
 import com.simplr.mykitta2.feature.auth.OtpVerifyArgs
@@ -28,12 +30,15 @@ import com.simplr.mykitta2.feature.auth.OtpVerifyStoreFactory
 import com.simplr.mykitta2.feature.auth.OtpVerifyViewModel
 import com.simplr.mykitta2.feature.home.HomeStoreFactory
 import com.simplr.mykitta2.feature.home.HomeViewModel
+import com.simplr.mykitta2.feature.principal.PrincipalStoreFactory
+import com.simplr.mykitta2.feature.principal.PrincipalViewModel
 import com.simplr.mykitta2.feature.splash.SplashStoreFactory
 import com.simplr.mykitta2.feature.splash.SplashViewModel
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.parameter.parametersOf
+import org.koin.core.qualifier.named
 import org.koin.dsl.KoinAppDeclaration
 import org.koin.dsl.module
 
@@ -67,9 +72,14 @@ val networkModule = module {
             appLogger = get(),
         )
     }
+    // Separate client for Coil image fetching — see KtorClientFactory.createForImages
+    // for why we can't share the API client (Accept: application/json → 406 from IIS).
+    single(named(IMAGE_HTTP_CLIENT)) { KtorClientFactory.createForImages() }
     single<AuthApi> { KtorAuthApi(get()) }
     single<CatalogApi> { KtorCatalogApi(get()) }
 }
+
+const val IMAGE_HTTP_CLIENT = "imageHttpClient"
 
 val repositoryModule = module {
     single<AuthRepository> {
@@ -77,6 +87,14 @@ val repositoryModule = module {
     }
     single<HomeRepository> {
         DefaultHomeRepository(catalogApi = get(), sessionStore = get(), countryStore = get())
+    }
+    single<PrincipalRepository> {
+        DefaultPrincipalRepository(
+            catalogApi = get(),
+            database = get(),
+            sessionStore = get(),
+            countryStore = get(),
+        )
     }
 }
 
@@ -109,6 +127,11 @@ val featureHomeModule = module {
     viewModelOf(::HomeViewModel)
 }
 
+val featurePrincipalModule = module {
+    factory { PrincipalStoreFactory(storeFactory = get(), principalRepository = get()) }
+    viewModelOf(::PrincipalViewModel)
+}
+
 val featureSplashModule = module {
     factory {
         // Warm-up runs the cheapest possible query against the empty Meta table
@@ -135,6 +158,7 @@ fun commonModules(): List<Module> = listOf(
     repositoryModule,
     featureAuthModule,
     featureHomeModule,
+    featurePrincipalModule,
     featureSplashModule,
 )
 

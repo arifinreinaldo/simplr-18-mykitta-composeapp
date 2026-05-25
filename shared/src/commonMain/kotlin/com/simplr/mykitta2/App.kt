@@ -9,24 +9,26 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import com.simplr.mykitta2.di.IMAGE_HTTP_CLIENT
 import com.simplr.mykitta2.feature.splash.SplashStore
 import com.simplr.mykitta2.ui.nav.AppNavHost
 import com.simplr.mykitta2.ui.splash.SplashScreen
 import com.simplr.mykitta2.ui.theme.MyKittaTheme
 import io.ktor.client.HttpClient
 import org.koin.compose.koinInject
+import org.koin.core.qualifier.named
 
 @Composable
 fun App() {
-    // Wire Coil 3's singleton ImageLoader to reuse our Ktor HttpClient (auth,
-    // logging, Chucker on debug) instead of standing up a parallel network
-    // stack. Idempotent — Coil retains the latest factory, so this is safe to
-    // run on every recomposition; the actual loader is built lazily on first
-    // AsyncImage and reused thereafter.
-    val httpClient: HttpClient = koinInject()
+    // Coil gets its own thin HttpClient — see KtorClientFactory.createForImages.
+    // Sharing the API client breaks image fetching because Ktor's ContentNegotiation
+    // plugin auto-adds Accept: application/json and IIS responds 406 for static
+    // image files. Idempotent: setSingletonImageLoaderFactory holds the latest
+    // factory and the loader is built lazily on first AsyncImage.
+    val imageHttpClient: HttpClient = koinInject(qualifier = named(IMAGE_HTTP_CLIENT))
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory(httpClient)) }
+            .components { add(KtorNetworkFetcherFactory(imageHttpClient)) }
             .crossfade(true)
             .build()
     }

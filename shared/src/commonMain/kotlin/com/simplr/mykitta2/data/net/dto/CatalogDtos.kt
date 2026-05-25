@@ -136,6 +136,22 @@ data class NotifCountServerResponse(
 @Serializable
 data class NotifCountDto(val count: Int)
 
+/**
+ * `GetLoyaltyPoints` payload — legacy contract extracts the balance from
+ * `objectData[0][0].points`. Missing rows (e.g. customer has no loyalty record
+ * yet) collapse to 0 rather than null so the UI can render an unconditional
+ * count.
+ */
+@Serializable
+data class LoyaltyPointsServerResponse(
+    @SerialName("getObjectResult") val getObjectResult: GetObjectResult<LoyaltyPointsDto>,
+) {
+    fun points(): Int = getObjectResult.objectData.firstOrNull()?.firstOrNull()?.points ?: 0
+}
+
+@Serializable
+data class LoyaltyPointsDto(@SerialName("Points") val points: Int = 0)
+
 @Serializable
 data class PrincipalServerResponse(
     @SerialName("getObjectResult") val getObjectResult: GetObjectResult<PrincipalDto>,

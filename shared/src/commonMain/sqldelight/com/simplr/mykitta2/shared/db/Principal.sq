@@ -1,0 +1,25 @@
+-- Per-supervisor list of principals (brand suppliers) the user has access to.
+-- Refreshed from `GetPrincipal` via CatalogApi.getPrincipals. The screen reads
+-- from this table first so the grid is paint-ready before the network call
+-- returns — same Room-flow-then-refresh pattern as the legacy Directory screen.
+CREATE TABLE IF NOT EXISTS Principal (
+    principalId TEXT NOT NULL PRIMARY KEY,
+    principalName TEXT NOT NULL,
+    principalImg TEXT NOT NULL,
+    isActive INTEGER NOT NULL,
+    sortOrder INTEGER NOT NULL DEFAULT 0
+);
+
+selectAll:
+SELECT * FROM Principal
+ORDER BY sortOrder ASC, principalName COLLATE NOCASE ASC;
+
+selectById:
+SELECT * FROM Principal WHERE principalId = :principalId;
+
+upsert:
+INSERT OR REPLACE INTO Principal(principalId, principalName, principalImg, isActive, sortOrder)
+VALUES (?, ?, ?, ?, ?);
+
+deleteAll:
+DELETE FROM Principal;

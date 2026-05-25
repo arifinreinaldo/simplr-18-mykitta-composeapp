@@ -156,6 +156,34 @@ class CatalogDtosTest {
         assertEquals(0, parsed.count())
     }
 
+    // ---- LoyaltyPointsServerResponse ----
+
+    @Test fun loyaltyPointsResponse_extractsPoints() {
+        val body = """
+            {"getObjectResult":{
+              "errorData":{"code":0,"description":""},
+              "hasMoreRecords":0,
+              "objectData":[[{"points":2450}]]
+            }}
+        """.trimIndent()
+        val parsed = json.decodeFromString<LoyaltyPointsServerResponse>(body)
+        assertEquals(2450, parsed.points())
+    }
+
+    @Test fun loyaltyPointsResponse_emptyDataReturnsZero() {
+        // Customer with no loyalty record — legacy contract collapses to 0
+        // rather than null. Matches the UI default ("show 0 if not available").
+        val body = """{"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[]}}"""
+        val parsed = json.decodeFromString<LoyaltyPointsServerResponse>(body)
+        assertEquals(0, parsed.points())
+    }
+
+    @Test fun loyaltyPointsResponse_emptyInnerListReturnsZero() {
+        val body = """{"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[]]}}"""
+        val parsed = json.decodeFromString<LoyaltyPointsServerResponse>(body)
+        assertEquals(0, parsed.points())
+    }
+
     // ---- PrincipalServerResponse ----
 
     @Test fun principalDto_mapsIsActiveBoolean() {

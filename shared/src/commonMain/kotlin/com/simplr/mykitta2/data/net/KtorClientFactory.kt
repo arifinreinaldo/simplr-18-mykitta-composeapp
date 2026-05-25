@@ -11,20 +11,18 @@ import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 object KtorClientFactory {
     /**
-     * Builds the shared HttpClient. No default base URL — every API surface is
-     * expected to provide an absolute URL per call (resolved via BackendDirectory)
-     * because backends differ per country.
+     * Builds the shared HttpClient for JSON APIs. No default base URL — every
+     * API surface is expected to provide an absolute URL per call (resolved via
+     * BackendDirectory) because backends differ per country.
      */
     fun create(
         tokenStore: TokenStore,
@@ -37,6 +35,26 @@ object KtorClientFactory {
         installTimeouts()
         installAuth(tokenStore)
         installDefaults()
+    }
+
+    /**
+     * Separate client for Coil image fetching. Intentionally omits:
+     *  - ContentNegotiation — it auto-adds `Accept: application/json` to every
+     *    request, which makes IIS return 406 for static image files.
+     *  - Auth — image CDNs don't want a bearer token, and leaking it widens the
+     *    blast radius if any image host is ever compromised.
+     *  - Logging — image bodies are binary and would flood the log pipeline.
+     * Uses the same platform engine factory so Android still routes through
+     * Chucker on debug builds (interceptor stack is engine-level, not client-level).
+     */
+    fun createForImages(): HttpClient = createPlatformHttpClient {
+        expectSuccess = true
+        install(UserAgent) { agent = "MyKitta/${BuildEnv.versionName} (${BuildEnv.flavor.name})" }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            requestTimeoutMillis = 30_000
+            socketTimeoutMillis = 30_000
+        }
     }
 
     private fun HttpClientConfig<*>.installContentNegotiation() {
@@ -89,9 +107,6 @@ object KtorClientFactory {
 
     private fun HttpClientConfig<*>.installDefaults() {
         install(UserAgent) { agent = "MyKitta/${BuildEnv.versionName} (${BuildEnv.flavor.name})" }
-        defaultRequest {
-            headers.append(HttpHeaders.Accept, ContentType.Application.Json.toString())
-        }
     }
 
     private fun redact(message: String): String =

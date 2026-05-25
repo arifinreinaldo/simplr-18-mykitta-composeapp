@@ -63,11 +63,13 @@ class HomeStoreTest {
         var bannersResult: Outcome<List<Banner>> = Outcome.Success(emptyList()),
         var configResult: Outcome<List<CategoryRail>> = Outcome.Success(emptyList()),
         var notifResult: Outcome<Int> = Outcome.Success(0),
+        var pointsResult: Outcome<Int> = Outcome.Success(0),
         var railItemsResults: MutableMap<String, Outcome<List<Item>>> = mutableMapOf(),
     ) : HomeRepository, JvmSerializable {
         var bannerCalls = 0
         var configCalls = 0
         var notifCalls = 0
+        var pointsCalls = 0
         val railItemCalls = mutableListOf<String>()
 
         override suspend fun loadBanners(): Outcome<List<Banner>> {
@@ -83,6 +85,9 @@ class HomeStoreTest {
         override suspend fun loadNotificationCount(): Outcome<Int> {
             notifCalls++; return notifResult
         }
+        override suspend fun loadLoyaltyPoints(): Outcome<Int> {
+            pointsCalls++; return pointsResult
+        }
     }
 
     private fun storeWith(repo: FakeHomeRepository): HomeStore =
@@ -90,21 +95,25 @@ class HomeStoreTest {
 
     // ---- Bootstrap ----
 
-    @Test fun bootstrap_loadsAllThreeChannels() = runTest(dispatcher) {
+    @Test fun bootstrap_loadsAllFourChannels() = runTest(dispatcher) {
         val repo = FakeHomeRepository(
             bannersResult = Outcome.Success(listOf(banner1)),
             configResult = Outcome.Success(emptyList()),
             notifResult = Outcome.Success(3),
+            pointsResult = Outcome.Success(2450),
         )
         val store = storeWith(repo)
 
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
         assertEquals(1, repo.notifCalls)
+        assertEquals(1, repo.pointsCalls)
         assertEquals(listOf(banner1), store.state.banners)
         assertEquals(3, store.state.notifCount)
+        assertEquals(2450, store.state.points)
         assertFalse(store.state.bannersLoading)
         assertFalse(store.state.railsLoading)
+        assertFalse(store.state.pointsLoading)
     }
 
     @Test fun bootstrap_fansOutOnePerRailItemFetch() = runTest(dispatcher) {
@@ -205,7 +214,7 @@ class HomeStoreTest {
 
     // ---- Refresh ----
 
-    @Test fun refresh_reissuesAllThreeChannels() = runTest(dispatcher) {
+    @Test fun refresh_reissuesAllChannels() = runTest(dispatcher) {
         val repo = FakeHomeRepository(
             configResult = Outcome.Success(listOf(mostBuyRail)),
             railItemsResults = mutableMapOf("GetMostBuy" to Outcome.Success(listOf(itemA))),
@@ -215,6 +224,7 @@ class HomeStoreTest {
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
         assertEquals(1, repo.notifCalls)
+        assertEquals(1, repo.pointsCalls)
         assertEquals(1, repo.railItemCalls.size)
 
         store.accept(HomeStore.Intent.Refresh)
@@ -222,6 +232,7 @@ class HomeStoreTest {
         assertEquals(2, repo.bannerCalls)
         assertEquals(2, repo.configCalls)
         assertEquals(2, repo.notifCalls)
+        assertEquals(2, repo.pointsCalls)
         assertEquals(2, repo.railItemCalls.size)
     }
 
@@ -277,5 +288,54 @@ class HomeStoreTest {
         val store = storeWith(repo)
         assertEquals(emptyList(), store.state.rails)
         assertFalse(store.state.railsLoading)
+    }
+
+    // ---- Loyalty points ----
+
+    @Test fun bootstrap_pointsFailureLeavesBalanceAtZeroNoScreenError() = runTest(dispatcher) {
+        // Loyalty fetch is fire-and-forget — failure must leave points at the
+        // default 0 (the "0 if not available" contract the UI expects) and
+        // must NOT surface a screen-level error.
+        val repo = FakeHomeRepository(pointsResult = Outcome.Failure(AppError.Network))
+        val store = storeWith(repo)
+        assertEquals(0, store.state.points)
+        assertFalse(store.state.pointsLoading)
+        assertNull(store.state.error)
+    }
+
+    @Test fun refreshPoints_reissuesOnlyLoyaltyFetch() = runTest(dispatcher) {
+        val repo = FakeHomeRepository(pointsResult = Outcome.Success(100))
+        val store = storeWith(repo)
+        assertEquals(1, repo.bannerCalls)
+        assertEquals(1, repo.configCalls)
+        assertEquals(1, repo.notifCalls)
+        assertEquals(1, repo.pointsCalls)
+
+        repo.pointsResult = Outcome.Success(250)
+        store.accept(HomeStore.Intent.RefreshPoints)
+
+        // Only the points channel re-fires; everything else stays at 1.
+        assertEquals(1, repo.bannerCalls)
+        assertEquals(1, repo.configCalls)
+        assertEquals(1, repo.notifCalls)
+        assertEquals(2, repo.pointsCalls)
+        assertEquals(250, store.state.points)
+        assertFalse(store.state.pointsLoading)
+    }
+
+    @Test fun refreshPoints_keepsPriorBalanceOnFailure() = runTest(dispatcher) {
+        // After a successful initial fetch, a failed manual refresh must NOT
+        // overwrite the visible count with 0 — keep the last-good number on
+        // screen so the user doesn't see their points "disappear" on a flake.
+        val repo = FakeHomeRepository(pointsResult = Outcome.Success(750))
+        val store = storeWith(repo)
+        assertEquals(750, store.state.points)
+
+        repo.pointsResult = Outcome.Failure(AppError.Network)
+        store.accept(HomeStore.Intent.RefreshPoints)
+
+        assertEquals(750, store.state.points)
+        assertFalse(store.state.pointsLoading)
+        assertNull(store.state.error)
     }
 }

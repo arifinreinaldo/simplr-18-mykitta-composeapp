@@ -183,6 +183,29 @@ class HomeRepositoryTest {
         assertTrue(body.contains("\"functionName\":\"GetNotificationCount\""), body)
     }
 
+    // ---- loadLoyaltyPoints ----
+
+    private val loyaltyPoints2450 = """
+        {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[{"points":2450}]]}}
+    """.trimIndent()
+
+    @Test fun loadLoyaltyPoints_postsGetLoyaltyPointsFunctionAndExtractsCount() = runTest {
+        val (repo, captured) = harness { respond(loyaltyPoints2450, HttpStatusCode.OK, jsonHeaders) }
+        val outcome = repo.loadLoyaltyPoints()
+        assertEquals(Outcome.Success(2450), outcome)
+        val body = bodyAsString(captured.single())
+        assertTrue(body.contains("\"functionName\":\"GetLoyaltyPoints\""), body)
+        assertTrue(body.contains("\"search\":\"all\""), body)
+    }
+
+    @Test fun loadLoyaltyPoints_emptyPayloadReturnsZero() = runTest {
+        val emptyLoyalty = """
+            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[]}}
+        """.trimIndent()
+        val (repo, _) = harness { respond(emptyLoyalty, HttpStatusCode.OK, jsonHeaders) }
+        assertEquals(Outcome.Success(0), repo.loadLoyaltyPoints())
+    }
+
     // ---- Error mapping ----
 
     @Test fun loadBanners_401MapsToUnauthorized() = runTest {

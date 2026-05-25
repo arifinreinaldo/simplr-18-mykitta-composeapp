@@ -22,16 +22,22 @@ interface HomeStore : Store<HomeStore.Intent, HomeStore.State, HomeStore.Label> 
         val rails: List<CategoryRail> = emptyList(),
         val railsLoading: Boolean = true,
         val notifCount: Int = 0,
-        // Loyalty-points balance — null while we haven't fetched yet (or while
-        // the endpoint is unimplemented). UI renders "— pts" on null so the
-        // card is visible without depending on the network call landing first.
-        val points: Int? = null,
+        // Loyalty-points balance. Defaults to 0 (legacy parity: a missing
+        // record means the user has no loyalty balance, not "unknown"). The
+        // card always renders a count; `pointsLoading` drives the inline
+        // refresh-button spinner.
+        val points: Int = 0,
+        val pointsLoading: Boolean = true,
         val error: String? = null,
         val refreshing: Boolean = false,
     )
 
     sealed interface Intent {
         data object Refresh : Intent
+
+        /** Re-fetches just the loyalty balance — fired by the inline refresh
+         *  button next to the points card. Does NOT re-fetch banners / rails. */
+        data object RefreshPoints : Intent
         data class ItemClicked(val item: Item) : Intent
         data class BannerClicked(val banner: Banner) : Intent
     }
@@ -71,6 +77,8 @@ class HomeStoreFactory(
         data class RailItemsLoaded(val functionName: String, val items: List<Item>) : Message
         data class RailItemsFailed(val functionName: String) : Message
         data class NotifCountLoaded(val count: Int) : Message
+        data object PointsLoading : Message
+        data class PointsLoaded(val points: Int) : Message
         data class ErrorSet(val message: String?) : Message
     }
 
@@ -95,6 +103,10 @@ class HomeStoreFactory(
                     if (state().refreshing) return
                     dispatch(Message.RefreshStarted)
                     loadAll(onFinished = { dispatch(Message.RefreshFinished) })
+                }
+                HomeStore.Intent.RefreshPoints -> {
+                    if (state().pointsLoading) return
+                    loadPoints()
                 }
                 is HomeStore.Intent.ItemClicked ->
                     publish(HomeStore.Label.ShowSnackbar("${intent.item.productDesc} — detail page coming soon"))
@@ -157,6 +169,23 @@ class HomeStoreFactory(
                     else -> Unit
                 }
             }
+
+            loadPoints()
+        }
+
+        /** Standalone loyalty fetch. Used both by [loadAll] (bootstrap +
+         *  pull-to-refresh) and by [HomeStore.Intent.RefreshPoints] (inline
+         *  refresh button). Failures leave the balance at its prior value and
+         *  do NOT surface a screen-level error (parity with notif count). */
+        private fun loadPoints() {
+            dispatch(Message.PointsLoading)
+            scope.launch {
+                when (val outcome = homeRepository.loadLoyaltyPoints()) {
+                    is Outcome.Success -> dispatch(Message.PointsLoaded(outcome.value))
+                    is Outcome.Failure -> dispatch(Message.PointsLoaded(state().points))
+                    Outcome.Idle, Outcome.Loading -> Unit
+                }
+            }
         }
     }
 
@@ -178,6 +207,8 @@ class HomeStoreFactory(
                 }
             )
             is Message.NotifCountLoaded -> copy(notifCount = msg.count)
+            Message.PointsLoading -> copy(pointsLoading = true)
+            is Message.PointsLoaded -> copy(points = msg.points, pointsLoading = false)
             is Message.ErrorSet -> copy(error = msg.message)
         }
     }
