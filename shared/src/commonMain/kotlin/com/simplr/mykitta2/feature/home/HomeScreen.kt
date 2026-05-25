@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,7 +65,9 @@ private const val BANNER_AUTO_ADVANCE_SECONDS = 4
 @Composable
 fun HomeScreen(
     onOpenCart: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
+    onOpenRewards: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = koinViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -90,7 +93,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("cibi") },
+                title = { Text("MyKitta") },
                 actions = {
                     // material-icons-extended isn't in the deps yet — use plain text
                     // glyphs so this slice stays in the existing dep graph.
@@ -102,6 +105,7 @@ fun HomeScreen(
                         IconButton(onClick = onOpenNotifications) { Text("🔔", fontSize = 20.sp) }
                     }
                     IconButton(onClick = onOpenCart) { Text("🛒", fontSize = 20.sp) }
+                    IconButton(onClick = onOpenChat) { Text("💬", fontSize = 20.sp) }
                 },
             )
         },
@@ -112,6 +116,7 @@ fun HomeScreen(
             state = state,
             onItemClick = { viewModel.accept(HomeStore.Intent.ItemClicked(it)) },
             onBannerClick = { viewModel.accept(HomeStore.Intent.BannerClicked(it)) },
+            onOpenRewards = onOpenRewards,
         )
     }
 }
@@ -122,6 +127,7 @@ private fun HomeContent(
     state: HomeStore.State,
     onItemClick: (Item) -> Unit,
     onBannerClick: (Banner) -> Unit,
+    onOpenRewards: () -> Unit,
 ) {
     LazyColumn(
         modifier = modifier,
@@ -134,6 +140,9 @@ private fun HomeContent(
                 loading = state.bannersLoading,
                 onClick = onBannerClick,
             )
+        }
+        item("points") {
+            PointsCard(points = state.points, onClick = onOpenRewards)
         }
         if (state.railsLoading) {
             item("rails-loading") {
@@ -148,6 +157,58 @@ private fun HomeContent(
             }
         }
     }
+}
+
+@Composable
+private fun PointsCard(points: Int?, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("🎁", fontSize = 24.sp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Points",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    // null while the loyalty endpoint isn't wired — show a
+                    // dash so the card layout is final but the number is
+                    // visibly pending. Switches to a formatted count once
+                    // HomeStore.State.points is non-null.
+                    text = points?.let { "${it.formatThousands()} pts" } ?: "— pts",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Text(
+                text = "Rewards  ›",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+private fun Int.formatThousands(): String {
+    val s = this.toString()
+    if (s.length <= 3) return s
+    val sb = StringBuilder()
+    val rem = s.length % 3
+    for (i in s.indices) {
+        if (i != 0 && (i - rem) % 3 == 0) sb.append(',')
+        sb.append(s[i])
+    }
+    return sb.toString()
 }
 
 @Composable

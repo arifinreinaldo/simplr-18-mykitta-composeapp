@@ -22,6 +22,10 @@ interface HomeStore : Store<HomeStore.Intent, HomeStore.State, HomeStore.Label> 
         val rails: List<CategoryRail> = emptyList(),
         val railsLoading: Boolean = true,
         val notifCount: Int = 0,
+        // Loyalty-points balance — null while we haven't fetched yet (or while
+        // the endpoint is unimplemented). UI renders "— pts" on null so the
+        // card is visible without depending on the network call landing first.
+        val points: Int? = null,
         val error: String? = null,
         val refreshing: Boolean = false,
     )

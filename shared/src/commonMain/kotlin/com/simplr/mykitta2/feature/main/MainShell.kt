@@ -1,6 +1,7 @@
 package com.simplr.mykitta2.feature.main
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +32,10 @@ import com.simplr.mykitta2.ui.nav.MainTab
  * top-level NavController (which still holds LoginOtp / OtpVerify / MainShell).
  * Each tab is a standalone composable; they're free to nest their own Scaffolds
  * for per-screen TopAppBars (HomeScreen does this).
+ *
+ * Cart and Chat aren't tabs — they're top-bar shortcuts on Home (matching the
+ * legacy product-catalog layout) and will become parent-NavController
+ * destinations when their screens land.
  */
 @Composable
 fun MainShell() {
@@ -39,6 +44,7 @@ fun MainShell() {
 
     Scaffold(
         bottomBar = { MainBottomBar(currentDest, tabNavController) },
+        contentWindowInsets = WindowInsets(0),
     ) { padding ->
         NavHost(
             navController = tabNavController,
@@ -47,14 +53,19 @@ fun MainShell() {
         ) {
             composable<MainTab.Home> {
                 HomeScreen(
-                    onOpenCart = { tabNavController.switchTab(MainTab.Cart) },
+                    // Cart, Chat, Notifications screens land in later phases —
+                    // keep callbacks as no-ops for now so the icons still react.
+                    onOpenCart = { /* Cart destination lands in a later phase. */ },
+                    onOpenChat = { /* Chat destination lands in a later phase. */ },
                     onOpenNotifications = { /* Notification destination lands in a later phase. */ },
+                    onOpenRewards = { tabNavController.switchTab(MainTab.Rewards) },
                 )
             }
-            composable<MainTab.Directory> { TabStub("Brands") }
-            composable<MainTab.Cart> { TabStub("Cart") }
-            composable<MainTab.Chat> { TabStub("Chat") }
-            composable<MainTab.Profile> { TabStub("Me") }
+            composable<MainTab.Principal> { TabStub("Principal") }
+            composable<MainTab.Rewards> { TabStub("Rewards") }
+            composable<MainTab.Profile> {
+
+            }
         }
     }
 }
@@ -62,7 +73,7 @@ fun MainShell() {
 @Composable
 private fun MainBottomBar(currentDest: NavDestination?, navController: NavController) {
     NavigationBar {
-        // 5 explicit items rather than a list-driven loop so `hasRoute<T>()` keeps
+        // 4 explicit items rather than a list-driven loop so `hasRoute<T>()` keeps
         // its reified type — no reflection, no string-matching on class names.
         NavigationBarItem(
             selected = currentDest?.hasRoute<MainTab.Home>() == true,
@@ -71,28 +82,22 @@ private fun MainBottomBar(currentDest: NavDestination?, navController: NavContro
             label = { Text("Home") },
         )
         NavigationBarItem(
-            selected = currentDest?.hasRoute<MainTab.Directory>() == true,
-            onClick = { navController.switchTab(MainTab.Directory) },
+            selected = currentDest?.hasRoute<MainTab.Principal>() == true,
+            onClick = { navController.switchTab(MainTab.Principal) },
             icon = { Text("🏷️", fontSize = 18.sp) },
-            label = { Text("Brands") },
+            label = { Text("Principal") },
         )
         NavigationBarItem(
-            selected = currentDest?.hasRoute<MainTab.Cart>() == true,
-            onClick = { navController.switchTab(MainTab.Cart) },
-            icon = { Text("🛒", fontSize = 18.sp) },
-            label = { Text("Cart") },
-        )
-        NavigationBarItem(
-            selected = currentDest?.hasRoute<MainTab.Chat>() == true,
-            onClick = { navController.switchTab(MainTab.Chat) },
-            icon = { Text("💬", fontSize = 18.sp) },
-            label = { Text("Chat") },
+            selected = currentDest?.hasRoute<MainTab.Rewards>() == true,
+            onClick = { navController.switchTab(MainTab.Rewards) },
+            icon = { Text("🎁", fontSize = 18.sp) },
+            label = { Text("Rewards") },
         )
         NavigationBarItem(
             selected = currentDest?.hasRoute<MainTab.Profile>() == true,
             onClick = { navController.switchTab(MainTab.Profile) },
             icon = { Text("👤", fontSize = 18.sp) },
-            label = { Text("Me") },
+            label = { Text("My Profile") },
         )
     }
 }

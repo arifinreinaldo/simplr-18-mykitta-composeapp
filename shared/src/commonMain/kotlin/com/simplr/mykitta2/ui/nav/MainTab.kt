@@ -10,14 +10,16 @@ import kotlinx.serialization.Serializable
  * [Destination] entries live in the top-level NavHost that also hosts the
  * unauthenticated auth flow.
  *
- * Cart / Chat / Profile / Directory are stubs today — the real screens land
- * in their respective phases. Adding the route up-front means the bottom nav
- * already navigates and per-tab state is preserved across switches.
+ * Principal / Rewards / Profile are stubs today — the real screens land in
+ * their respective phases. Adding the route up-front means the bottom nav
+ * already navigates and per-tab state is preserved across switches. Cart and
+ * Chat are intentionally NOT tabs: they live in the Home top bar as shortcuts
+ * (matching the legacy product-catalog screen) and will become top-level
+ * destinations on the parent NavController when their screens land.
  */
 sealed interface MainTab {
     @Serializable data object Home : MainTab
-    @Serializable data object Directory : MainTab
-    @Serializable data object Cart : MainTab
-    @Serializable data object Chat : MainTab
+    @Serializable data object Principal : MainTab
+    @Serializable data object Rewards : MainTab
     @Serializable data object Profile : MainTab
 }
