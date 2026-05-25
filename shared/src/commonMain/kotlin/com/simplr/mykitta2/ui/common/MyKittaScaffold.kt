@@ -1,6 +1,8 @@
 package com.simplr.mykitta2.ui.common
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -30,4 +32,22 @@ fun MyKittaScaffold(
         },
         content = content,
     )
+}
+
+@Composable
+fun <T> ListViewSeparated(
+    items: List<T>,
+    separator: @Composable () -> Unit,
+    itemContent: @Composable (T) -> Unit
+) {
+    LazyColumn {
+        itemsIndexed(items) { index, item ->
+
+            itemContent(item)
+
+            if (index < items.lastIndex) {
+                separator()
+            }
+        }
+    }
 }

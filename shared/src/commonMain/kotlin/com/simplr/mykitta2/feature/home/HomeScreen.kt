@@ -228,7 +228,11 @@ private fun BannerCarousel(
     ) {
         when {
             loading -> CircularProgressIndicator()
-            banners.isEmpty() -> Text("No banners", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            banners.isEmpty() -> Text(
+                "No banners",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             else -> {
                 val pagerState = rememberPagerState(pageCount = { banners.size })
                 LaunchedEffect(banners.size) {
@@ -281,22 +285,18 @@ private fun Rail(
     onItemClick: (Item) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = rail.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
         when {
             rail.loading -> Box(
                 modifier = Modifier.fillMaxWidth().height(160.dp),
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
+
             rail.items.isEmpty() -> Text(
                 text = "No items",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
+
             else -> LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -341,7 +341,12 @@ private fun ItemCard(item: Item, onClick: () -> Unit) {
                 if (item.isSoldOut) {
                     // Re-overlay on top of the loaded image so the badge stays
                     // visible regardless of which state Coil settles on.
-                    Text("SOLD OUT", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "SOLD OUT",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))

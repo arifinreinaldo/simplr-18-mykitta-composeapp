@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.simplr.mykitta2.feature.home.HomeScreen
+import com.simplr.mykitta2.feature.profile.ProfileScreen
 import com.simplr.mykitta2.ui.nav.MainTab
 
 /**
@@ -64,7 +65,7 @@ fun MainShell() {
             composable<MainTab.Principal> { TabStub("Principal") }
             composable<MainTab.Rewards> { TabStub("Rewards") }
             composable<MainTab.Profile> {
-
+                ProfileScreen()
             }
         }
     }

@@ -2,13 +2,30 @@
 title: Repository.kt
 slug: repository
 type: deep
-verified: 2026-05-23
+verified: 2026-05-25
 sources:
   - app/src/main/java/com/b2b/online/data/Repository.kt
   - app/src/main/java/com/b2b/online/data/RepositoryPHLocation.kt
   - app/src/main/java/com/b2b/online/data/api/ApiResult.kt
   - app/src/main/java/com/b2b/online/data/api/NetworkUtil.kt
   - app/src/main/java/com/b2b/online/data/api/ApiService.kt
+  - app/src/main/java/com/b2b/online/data/api/ApiPostService.kt
+  - app/src/main/java/com/b2b/online/data/api/request/GetRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/LoginRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/SendOTPRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/VerifyOTPRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/RegisterRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/CartRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/CartGroupPromotionRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/VendorPickerRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/AddressRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/ChatRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/NotificationRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/ReferralRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/RegisterPartnerRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/CustomerImageRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/request/VoucherRequest.kt
+  - app/src/main/java/com/b2b/online/data/api/response/BaseResponse.kt
 ---
 
 # Repository.kt
@@ -39,6 +56,173 @@ The class is annotated `@Module @InstallIn(ActivityRetainedComponent::class)` (R
 - `NetworkUtil.kt:133-180` — `doOnlineCall` is the engine: emits `Loading` → `HasMore` → either `SuccessFromRemote` / `Expired` (on 401) / `Error`, catches at the flow level into Crashlytics, and always emits `Finish` after a 100 ms delay (line 178).
 - `app/src/main/java/com/b2b/online/data/api/ApiResult.kt:6-12` — `ApiResult` sealed class: `OnSuccess` / `OnFailure(code, UITextState)` / `NetworkError`.
 - `app/src/main/java/com/b2b/online/data/api/ApiService.kt:7-88` — a *separate* GET-based Retrofit interface with path-encoded `{sort}/{parameter}/{user}/{count}/{offset}`. Repository does **not** use this — it uses `ApiPostService` exclusively via `GetRequest` bodies. `ApiService` looks like a legacy/parallel surface.
+
+## API surface
+
+Every Repository network call goes through `ApiPostService` (POST only). Reads against the catalog/profile/history/chat/notification system funnel through the overloaded `User/GetObject` endpoint and are differentiated by a `functionName` field on the request body. Writes (auth, cart, address, chat, notification mark-read, redemption) hit dedicated endpoints.
+
+### Request envelope — `GetRequest` (request/GetRequest.kt:9)
+
+Almost every read shares this body:
+
+```json
+{
+  "functionName": "GetItem",
+  "offset": 0,
+  "recordsize": 15,
+  "search": "all",
+  "sort": "0",
+  "user": "M1",
+  "ts": "",
+  "CustNo": "",
+  "exclude": ""
+}
+```
+
+Field origins:
+- `user` — `getSupervisorRequest` reads `sp[C.SUPERVISOR]`; `getUserRequest` reads `sp[C.USER]` (Repository.kt:64-91). Both default to `"M1"`.
+- `recordsize` — `sp[C.PAGINATION]` default `15`. Overridden inline: `1000` for principal queries (Repository.kt:189, 207, 1192), `9999` for vendor chat (770), `10` for suggestions (1085).
+- `ts` — chat-only delta cursor (Repository.kt:732, 760).
+- `exclude` — used by suggestions: `exclude="Code=$itemNo"` (Repository.kt:1089).
+- `search` — single string `"all"` or filter expression `"key=value,key=value"`; `getHistoryList` is the only caller that takes a `List<Pair<String,String>>` and joins it itself (Repository.kt:641).
+
+### Response envelope — `GetObjectResult<T>` (response/BaseResponse.kt:8)
+
+```json
+{
+  "getObjectResult": {
+    "errorData": { "code": 0, "description": "" },
+    "hasMoreRecords": 1,
+    "objectData": [ [ ... ] ]
+  }
+}
+```
+
+`objectData` is `List<List<T>>`. Almost all endpoints use `[0]` for rows. **History uses `[0]` for headers and `[1]` for details** (HistoryServerResponse.kt:119-130). Empty `errorData.description` or `code == 200` is success; `code == 401` short-circuits to `UIState.Expired`; anything else becomes `UIState.Error`.
+
+### Repository functions by feature
+
+Auth & session (dedicated endpoints):
+
+| Repo fn | Endpoint | Request body | Response | Side-effect |
+|---|---|---|---|---|
+| `doLogin(username, password)` Repository.kt:366 | `POST Account/Login` | `LoginRequest{ Password, UserName, Firebase_Token }` | `LoginServerResponse` | `sp.setSession(Session(SupervisorCode, token, IsSupervisor=="True", userName))` |
+| `doLoginOTP(username, countryCode)` :392 | `POST Account/LoginOTP` | `LoginOTPRequest{ userId, country }` | `MessageServerResponse` | none |
+| `doVerifyLoginOTP(username, otp)` :409 | `POST Account/VerifyLoginOTP` | `VerifyOTPRequest{ otp, userId, firebase_token }` | `LoginServerResponse` | session write |
+| `doCallOTP(username, country)` :453 | `POST Account/SendOTP` | `SendOTPRequest{ userId, country }` | `MessageServerResponse` | none |
+| `doVerifyOTP(username, otp)` :472 | `POST Account/VerifyOTP` | `VerifyOTPRequest{ otp, userId }` (no token) | `MessageServerResponse` | **no session write** — signup-flow OTP |
+| `doLogout()` :435 | `POST User/SignOut` | none | none | `sp.clearSession()` + `local.clearAllTables()` |
+| `doRegister(outlet…, contact…, taxNumber, outlet PH-address fields)` :491 | `POST Account/Signup` | `RegisterRequest` (no photo, no fcm token) | `LoginServerResponse` | session written with `contactPhone` as code/username |
+| `doRegisterWithPhoto(…, cameraFile: List<File>, lat, lng, referralCode)` :842 | `POST Account/CustomerSignup` (multipart) | parts `file0…fileN` (JPEG) + `data` = JSON `RegisterRequest{ …, firebase_token, store_lat, store_long, referral }` | `LoginServerResponse` | session with `IsSupervisor=true` hard-coded |
+| `doRegisterReferral(partnerName, phone, email, supervisorCode, otp)` :984 | `POST Register/ReferralSave` | `RegisterPartnerRequest{ partnerName, phone, email, supervisor_code, firebase_Token, OTP }` | `LoginServerResponse` | session with `supervisor=false` |
+| `doPrincipalSubmit(principal: List<PrincipalPicker>)` :536 | `POST User/RequestPrincipal` | `List<VendorPickerRequestItem{ principalId }>` (bare array, not wrapped) | `MessageServerResponse` | none |
+| `getReferral()` :939 | `POST Register/ReferralGet` | `ReferralRequest{ code: supervisor }` | `OTPServerResponse{ otp }` | none |
+| `getReferralDetail(value)` :971 | `POST Register/ReferralShow` | `ReferralCodeRequest{ otp: value }` | `ReferralServerResponse` | none |
+| `getCustomerImage()` :1014 | `POST Account/ShowImage` | `CustomerImageRequest{ user: supervisor }` | `CustomerImageServerResponse` | none |
+| `updateProfilePicture(image: File)` :823 | `POST Account/FileUpload` (multipart) | `file` (JPEG) + `data` = supervisor code (text/plain) | `ProfileResponse` | none (Flow is `collectLatest {}` — fire-and-forget) |
+
+Catalog reads (`POST User/GetObject` — differentiated by `functionName`):
+
+| Repo fn | functionName | Saves via | Domain return |
+|---|---|---|---|
+| `getHotItemList(sort, parameter, offset)` :93 | `GetItem` | `hotItemDao.inserts` | `UIState<Items>` |
+| `getLastItemList(sort, parameter, offset)` :114 | `GetLastOrder` | `lastItemDao.inserts` | `UIState<Items>` |
+| `getSearchItemList(sort, parameter, offset, initialSearch)` :139 | `GetItem` | `searchItemDao.refresh` if `initialSearch` else `.inserts` | `UIState<Items>` |
+| `getPrincipalItemList(sort, parameter, offset)` :161 | `GetItem` | `principalItemDao.inserts` | `UIState<Items>` |
+| `getCategoryData(param, key)` :1052 | `param` (caller passes) | `categoryItemDao.inserts` | `UIState<Pair<String, Items>>` (key kept for routing) |
+| `getSuggestedItemList(itemNo)` :1075 | `GetItemSuggestion` | none | `UIState<Items>` (recordsize=10, exclude=`Code=$itemNo`) |
+| `getRedemptionItemList(sort, parameter, offset, initialSearch)` :1203 | `GetRedemptionItems` | `searchItemDao.refresh`/`.inserts` (re-uses search table) | `UIState<Items>` |
+| `getPrincipalList(sort, parameter, offset)` :201 | `GetPrincipal` (recordsize=1000) | `principalDao.refresh` (full table replace) | `UIState<List<Principal>>` |
+| `getPrincipal(sort, parameter, offset)` :1186 | `GetPrincipal` (recordsize=1000) | none (read-through) | `UIState<List<Principal>>` |
+| `getPrincipalPicker(sort, parameter, offset)` :178 | `GetPrincipalPicker` (recordsize=1000) | `principalPickerDao.refresh` (filters `IsProcess==0` out) | `UIState<List<PrincipalPicker>>` |
+| `getBannerList(sort, parameter, offset)` :288 | `GetBanner` | `bannerDao.refresh` (full replace) | `UIState<List<Banner>>` |
+| `getItemImageList(sort, parameter, offset)` :597 | `GetItemImages` | `imageDao.refresh` | `UIState<List<Image>>` |
+| `getProfile(sort, parameter, offset)` :708 | `GetProfile` (via `getUserRequest`) | **none** (not cached locally) | `UIState<ProfileServerResponse>` |
+| `getPartnerList(offset)` :956 | `GetPartnerList` (search="", sort="0") | none (passthrough) | `UIState<PartnerServerResponse>` |
+| `getConfigList()` :1032 | `GetMultiListConfig` (search="all") | `configListDao.deleteTable()` then `inserts` | `UIState<List<ConfigListEntity>>` |
+| `getLoyaltyPoints()` :1261 | `GetLoyaltyPoints` (search="all") | none | `UIState<Int>` (extracted from `objectData[0][0].points`) |
+| `getNotificationList(offset)` :1101 | `GetNotificationData` (search="all", sort="0") | `notifDao.inserts` | `UIState<List<Notification>>` (`hasMore` forced `true`) |
+| `getNotificationCount()` :1116 | `GetNotificationCount` | none | `UIState<NotifCountEntity>` |
+
+Promotions:
+
+- `getItemPromotionList(sort, parameter, offset, principalId)` Repository.kt:316 — `functionName=GetItemPromotion`. Saves to **three DAOs in one `saveCallResult`**: `promoDao.refresh`, `promoReqDao.refresh`, `promoBonusDao.refresh`. No Room transaction wraps this (see Gotchas).
+- `getItemPrincipalList(sort, parameter, offset, principalId)` :338 — `functionName=GetPromotion` (different from above). Same three-DAO write.
+- `doCheckGroupPromotion(data: List<CartGroupPromotionDetailRequest>)` :1225 — `POST User/CheckItemCustomerPromotion`. Body: `CartGroupPromotionRequest{ details: [{productId, qty, discount, discountAmount, promoId, basePrice, subtotal, isUpdate}] }`. Response: `ItemCustomerPromotionResponse{ details }`. For each detail with non-empty `isUpdate`, calls `cartDetailDao.updateDiscount` or `updateDiscountAmount` per `productId`.
+
+Cart (mostly local — 2 network calls):
+
+- `doCheckCart(data: List<CartHeaderRequest>)` Repository.kt:558 — `POST User/CheckPromotion`. Body: `CartRequest{ CustAddr:"", Firebase_Token:"", cart }`. Response: `List<CheckPromotionResponseItem{ isValid, promoID }>`. Side-effect: `cartDao.updateActive(it)`. Promos starting with `PREFIX_DEF_PROMO` are forced active regardless of `isValid` (CheckPromotionResponse.kt:18-21).
+- `doPostCart(data: List<CartHeaderRequest>, address: Address)` :575 — `POST User/SubmitOrder`. Body: `CartRequest{ CustAddr: address.addressId, Firebase_Token, cart }`. Response: `MessageServerResponse`.
+
+`CartHeaderRequest` shape (request/CartRequest.kt:21):
+```
+{ promoId, principalId,
+  details: [{productId, qty, discount, discountAmount, promoId, basePrice, subtotal}],
+  bonus:   [{productId, qty, promoId}],
+  subtotal, discount, gst, total }
+```
+
+History:
+
+- `getHistoryList(sort, parameter: List<Pair<String,String>>, offset, isInitial)` Repository.kt:620 — `functionName=GetHistory` via `getUserRequest`. The `parameter` list is joined `"key=value,key=value"`. If `isInitial && parameter.size==1`, pre-deletes Room rows scoped by `principalId` or `status` (Repository.kt:624-636). Response: headers in `objectData[0]`, details in `objectData[1]` — manually re-Moshi-parsed via `adapterHistory`/`adapterHistoryDetail`. Saves both tables.
+- `getHistoryDetailUnified(id)` :1131 — only caller of `doUnifiedCall`. Local-first via `historyDao.get(id)`; if null fires network with `parameter="OrderNo=$id"`. After saving, re-reads from Room for the final emit.
+- `getHistoryDetail(id)` :668 — pure local via `doRoomCall` → `UIRoom<HistoryData>`.
+
+Address / shipping:
+
+- `getShipmentList(sort, parameter, offset)` Repository.kt:679 — `functionName=GetShipmentAddress`. Saves via `addressDao.onlineInsert(it)` **only if non-empty** (preserves locally-added rows on empty fetch).
+- `updateAddress(request: AddressRequest)` :800 — `POST User/AddAddress`. Body: `AddressRequest{ customerAddressId, name, address1, address2, zipcode, city, phone, contact, Barangay, Province, Subdivision }`. Response: `MessageServerResponse`. **No local write** — caller must re-sync.
+- `updateSelectedAddress(address)` :704 — local only (`addressDao.selectAddress(addressId)`).
+
+Chat:
+
+- `getLastChatList(sort, offset)` Repository.kt:727 — `functionName=GetChatList`, `search="all"`, `ts = chatDao.getLastChat() ?: ""`. Saves: `chatDao.clearLast()` + `chatDao.replaceData(it)`.
+- `getChatVendor(principalId, sort="0", offset=0)` :753 — `POST Chat/ReadChat` (not `User/GetObject`). Hand-built `GetRequest("GetChatVendor", offset, 9999, "principalId=$principalId", sort, user, ts, CustNo=principalId)`. `ts` from `chatDao.getLastRead(principalId) ?: "0"`. Saves: `chatDao.replaceData` + `chatDao.updateRead(principalId)`.
+- `sendChat(message, principal)` :915 — `POST Chat/SendChat`. Body: `ChatRequest{ chat: message, principal }`. Response: `MessageServerResponse`.
+
+Notifications:
+
+- `getNotificationList(offset)` / `getNotificationCount()` — see catalog-reads table above.
+- `updateReadNotification(notifID: Int)` Repository.kt:1173 — `POST Notification/ReadNotification`. Body: `NotificationRequest{ NotifID: notifID.toString() }`. Side-effect: `notifDao.updateSelected(true, notifID)`.
+
+Loyalty:
+
+- `doPostRedeem(itemNo, qty, points)` Repository.kt:1276 — `POST User/RedeemPoints`. Body: `VoucherRequest{ custNo: salesUser, itemNo, qty, points }`. Response: `MessageServerResponse`.
+
+Local-only readers (no network — Room Flow):
+
+`getHotItemFlow`, `getLastItemFlow`, `getSearchFlow`, `getPrincipalItemFlow(principalId)`, `getCategoryItemDataFlow`, `getConfigFlow`, `getConfigListFlow`, `getPrincipalFlow`, `getPrincipalFlowAll`, `getPrincipalPickerFlow`, `getAllPrincipal`, `getPrincipalById(id)`, `getBannerFlow`, `getBannerFlow(id)`, `getVariantFlow(item)`, `getPromoData(promo)`, `getPromoByPrincipal(principalId)`, `getCartFlow`, `getCartById(variantId)`, `getShipmentFlow`, `getImageFlow(item)`, `getHistoryFlow(parameter)`, `getHistoryFlowByPrincipal(parameter)`, `getHistoryDetail(id)`, `getChatData`, `getChatDataByVendor(vendor)`, `getFlowUnread`, `getFlowUnreadperPrincipal(principalId)`, `getNotificationFlow`.
+
+Local-only writers (no network): `insertCartData`, `deleteCartData`, `updateSelectedCartByPrincipal`, `updateSelectedCartByVariant`, `updatePrincipalPicker`, `deleteSearch`, `deletePrincipal(principalId)`, `deleteNotification`, `nukeTable`.
+
+### Endpoint → callers cheat-sheet
+
+| Endpoint | Repo function(s) |
+|---|---|
+| `Account/Login` | `doLogin` |
+| `Account/LoginOTP` | `doLoginOTP` |
+| `Account/VerifyLoginOTP` | `doVerifyLoginOTP` |
+| `Account/SendOTP` | `doCallOTP` |
+| `Account/VerifyOTP` | `doVerifyOTP` |
+| `Account/Signup` | `doRegister` |
+| `Account/CustomerSignup` *(multipart)* | `doRegisterWithPhoto` |
+| `Account/FileUpload` *(multipart)* | `updateProfilePicture` |
+| `Account/ShowImage` | `getCustomerImage` |
+| `User/SignOut` | `doLogout` |
+| `User/GetObject` | **17 reads** dispatched by `functionName` (see catalog/promo/profile/chat/history/notification/loyalty/partner/config tables) |
+| `User/RequestPrincipal` | `doPrincipalSubmit` |
+| `User/AddAddress` | `updateAddress` |
+| `User/SubmitOrder` | `doPostCart` |
+| `User/CheckPromotion` | `doCheckCart` |
+| `User/CheckItemCustomerPromotion` | `doCheckGroupPromotion` |
+| `User/RedeemPoints` | `doPostRedeem` |
+| `Chat/SendChat` | `sendChat` |
+| `Chat/ReadChat` | `getChatVendor` |
+| `Notification/ReadNotification` | `updateReadNotification` |
+| `Register/ReferralGet` | `getReferral` |
+| `Register/ReferralShow` | `getReferralDetail` |
+| `Register/ReferralSave` | `doRegisterReferral` |
 
 ## Depends on
 - [[data]]
