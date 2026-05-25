@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Invisible drawable used as windowSplashScreenAnimatedIcon so the OS-level
-     splash on API 31+ shows nothing but the white background. The custom
-     in-app Compose SplashScreen handles all visible motion. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="@android:color/transparent" />
-</shape>

@@ -1,18 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        Splash theme: applied to the launcher activity. AndroidX core-splashscreen
-        backports this behavior to API 23+. We make the OS-level splash invisible
-        (transparent icon, white background that matches the in-app splash) and
-        kill the exit animation in MainActivity, so the user only sees the
-        custom Compose SplashScreen choreography.
-
-        postSplashScreenTheme is the theme the activity adopts once
-        installSplashScreen() dismisses the splash — the original app theme.
+        App theme. The Compose `SplashScreen` is the only splash; we just need
+        the pre-Compose window to render white so the brief frame before Compose
+        mounts blends into the splash background (matches MyKittaColors.Background).
     -->
-    <style name="Theme.MyKitta.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon_transparent</item>
-        <item name="postSplashScreenTheme">@android:style/Theme.Material.Light.NoActionBar</item>
+    <style name="Theme.MyKitta" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
     </style>
 </resources>

@@ -9,6 +9,7 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import com.simplr.mykitta2.feature.splash.SplashStore
 import com.simplr.mykitta2.ui.nav.AppNavHost
 import com.simplr.mykitta2.ui.splash.SplashScreen
 import com.simplr.mykitta2.ui.theme.MyKittaTheme
@@ -32,12 +33,17 @@ fun App() {
 
     MyKittaTheme {
         // Splash sits outside the nav graph so it can't be navigated back to.
-        // rememberSaveable survives rotation — once the splash plays it stays gone.
-        var splashDone by rememberSaveable { mutableStateOf(false) }
-        if (splashDone) {
-            AppNavHost()
+        // We persist the resolved destination name across rotation — splashing
+        // again after a config change would be jarring. The enum is round-tripped
+        // as its String name; primitives are universally Saveable on both
+        // Android (Bundle) and iOS (Compose Multiplatform state holder).
+        var savedDestination by rememberSaveable { mutableStateOf<String?>(null) }
+        val destination = savedDestination?.let(SplashStore.Destination::valueOf)
+
+        if (destination == null) {
+            SplashScreen(onDestination = { savedDestination = it.name })
         } else {
-            SplashScreen(onFinished = { splashDone = true })
+            AppNavHost(startDestination = destination)
         }
     }
 }

@@ -28,6 +28,8 @@ import com.simplr.mykitta2.feature.auth.OtpVerifyStoreFactory
 import com.simplr.mykitta2.feature.auth.OtpVerifyViewModel
 import com.simplr.mykitta2.feature.home.HomeStoreFactory
 import com.simplr.mykitta2.feature.home.HomeViewModel
+import com.simplr.mykitta2.feature.splash.SplashStoreFactory
+import com.simplr.mykitta2.feature.splash.SplashViewModel
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModelOf
@@ -107,6 +109,24 @@ val featureHomeModule = module {
     viewModelOf(::HomeViewModel)
 }
 
+val featureSplashModule = module {
+    factory {
+        // Warm-up runs the cheapest possible query against the empty Meta table
+        // — this triggers the SQLite driver open + PRAGMA work that would
+        // otherwise happen on first feature query (Main thread). Future startup
+        // touches can be appended here.
+        val database: com.simplr.mykitta2.shared.db.MyKittaDatabase = get()
+        SplashStoreFactory(
+            storeFactory = get(),
+            tokenStore = get(),
+            sessionStore = get(),
+            warmup = { database.schemaQueries.selectAll().executeAsList() },
+            appLogger = get(),
+        )
+    }
+    viewModelOf(::SplashViewModel)
+}
+
 fun commonModules(): List<Module> = listOf(
     coreModule,
     prefsModule,
@@ -115,6 +135,7 @@ fun commonModules(): List<Module> = listOf(
     repositoryModule,
     featureAuthModule,
     featureHomeModule,
+    featureSplashModule,
 )
 
 expect val platformModule: Module

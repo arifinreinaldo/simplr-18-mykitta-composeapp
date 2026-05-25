@@ -3,3 +3,9 @@ CREATE TABLE IF NOT EXISTS Meta (
     key TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Used by SplashStore to warm the SQLite driver during the splash window so the
+-- first feature query doesn't pay the driver-open + PRAGMA cost on the UI thread.
+-- Querying the empty Meta table is sub-millisecond.
+selectAll:
+SELECT * FROM Meta;

@@ -7,7 +7,10 @@ import com.simplr.mykitta2.data.net.api.KtorCatalogApi
 import com.simplr.mykitta2.data.prefs.SettingsCountryStore
 import com.simplr.mykitta2.data.prefs.SettingsSessionStore
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
+import com.simplr.mykitta2.domain.Banner
+import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Country
+import com.simplr.mykitta2.domain.Item
 import com.simplr.mykitta2.domain.Session
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -124,7 +127,7 @@ class HomeRepositoryTest {
         """.trimIndent()
         val (repo, _) = harness { respond(withOne, HttpStatusCode.OK, jsonHeaders) }
         val outcome = repo.loadBanners()
-        assertIs<Outcome.Success<*>>(outcome)
+        assertIs<Outcome.Success<List<Banner>>>(outcome)
         val banners = outcome.value
         assertEquals(1, banners.size)
         assertEquals("FRUIT TREE", banners.first().bannerName)
@@ -135,7 +138,7 @@ class HomeRepositoryTest {
     @Test fun loadConfigRails_returnsRailsSortedByDisplayNo() = runTest {
         val (repo, _) = harness { respond(twoRails, HttpStatusCode.OK, jsonHeaders) }
         val outcome = repo.loadConfigRails()
-        assertIs<Outcome.Success<*>>(outcome)
+        assertIs<Outcome.Success<List<CategoryRail>>>(outcome)
         val rails = outcome.value
         // Server returned DisplayNo 2 then 1 — repo sorts so Last Buy (1) comes first.
         assertEquals(listOf("Last Buy", "Most Buy"), rails.map { it.title })
@@ -163,7 +166,7 @@ class HomeRepositoryTest {
     @Test fun loadRailItems_mapsItemDtos() = runTest {
         val (repo, _) = harness { respond(twoItems, HttpStatusCode.OK, jsonHeaders) }
         val outcome = repo.loadRailItems("GetMostBuy")
-        assertIs<Outcome.Success<*>>(outcome)
+        assertIs<Outcome.Success<List<Item>>>(outcome)
         val items = outcome.value
         assertEquals(2, items.size)
         assertEquals("Soap", items[0].productDesc)

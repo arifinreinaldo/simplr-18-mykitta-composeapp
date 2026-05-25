@@ -10,11 +10,16 @@ import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
 import com.simplr.mykitta2.feature.main.MainShell
+import com.simplr.mykitta2.feature.splash.SplashStore
 
 @Composable
-fun AppNavHost() {
+fun AppNavHost(startDestination: SplashStore.Destination) {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = Destination.LoginOtp) {
+    val initialRoute: Destination = when (startDestination) {
+        SplashStore.Destination.Home -> Destination.Home
+        SplashStore.Destination.Login -> Destination.LoginOtp
+    }
+    NavHost(navController = navController, startDestination = initialRoute) {
         composable<Destination.LoginOtp> {
             LoginOtpScreen(
                 onOtpSent = { phoneE164, userIdDigits, country ->

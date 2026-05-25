@@ -90,7 +90,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MyKitta") },
+                title = { Text("cibi") },
                 actions = {
                     // material-icons-extended isn't in the deps yet — use plain text
                     // glyphs so this slice stays in the existing dep graph.
