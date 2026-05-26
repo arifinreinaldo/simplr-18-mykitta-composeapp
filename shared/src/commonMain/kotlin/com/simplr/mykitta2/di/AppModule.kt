@@ -40,12 +40,15 @@ import com.simplr.mykitta2.feature.auth.OtpVerifyStoreFactory
 import com.simplr.mykitta2.feature.auth.OtpVerifyViewModel
 import com.simplr.mykitta2.feature.home.HomeStoreFactory
 import com.simplr.mykitta2.feature.home.HomeViewModel
+import com.simplr.mykitta2.feature.notification.NotificationStoreFactory
+import com.simplr.mykitta2.feature.notification.NotificationViewModel
 import com.simplr.mykitta2.feature.principal.PrincipalStoreFactory
 import com.simplr.mykitta2.feature.principal.PrincipalViewModel
 import com.simplr.mykitta2.feature.profile.ProfileStoreFactory
 import com.simplr.mykitta2.feature.profile.ProfileViewModel
 import com.simplr.mykitta2.feature.splash.SplashStoreFactory
 import com.simplr.mykitta2.feature.splash.SplashViewModel
+import com.simplr.mykitta2.ui.nav.PendingNavStore
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModelOf
@@ -190,6 +193,22 @@ val featureProfileModule = module {
     viewModelOf(::ProfileViewModel)
 }
 
+val featureNotificationModule = module {
+    // PendingNavStore is process-scoped state for cross-NavController deep-links
+    // (e.g. NotificationScreen → MainShell's PrincipalCatalog tab). Lives here
+    // alongside the notification feature so the binding is co-located with its
+    // producer.
+    single { PendingNavStore() }
+    factory {
+        NotificationStoreFactory(
+            storeFactory = get(),
+            notificationRepository = get(),
+            principalRepository = get(),
+        )
+    }
+    viewModelOf(::NotificationViewModel)
+}
+
 val featureSplashModule = module {
     factory {
         // Warm-up runs the cheapest possible query against the empty Meta table
@@ -218,6 +237,7 @@ fun commonModules(): List<Module> = listOf(
     featureHomeModule,
     featurePrincipalModule,
     featureProfileModule,
+    featureNotificationModule,
     featureSplashModule,
 )
 
