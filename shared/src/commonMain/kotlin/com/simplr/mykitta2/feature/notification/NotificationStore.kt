@@ -94,11 +94,35 @@ class NotificationStoreFactory(
         }
 
         override fun executeIntent(intent: NotificationStore.Intent) {
-            // Implemented in Tasks 16-19.
+            // LoadNextPage / TapItem / Refresh implemented in Tasks 17-19.
+            when (intent) {
+                NotificationStore.Intent.DismissError -> dispatch(Message.ErrorSet(null))
+                else -> Unit
+            }
         }
 
         private fun loadPage(offset: Int, isFirstLoad: Boolean) {
-            // Implemented in Task 16.
+            if (isFirstLoad) dispatch(Message.FirstLoadStarted)
+            else dispatch(Message.LoadingMoreStarted)
+            scope.launch {
+                when (val outcome = notificationRepository.loadPage(offset)) {
+                    is Outcome.Success -> {
+                        val page = outcome.value
+                        dispatch(
+                            Message.PageLoaded(
+                                replace = isFirstLoad,
+                                items = page.items,
+                                advanceBy = page.items.size,
+                                endReached = !page.hasMore,
+                                fromCache = page.fromCache,
+                            )
+                        )
+                    }
+                    is Outcome.Failure ->
+                        dispatch(Message.LoadFailed(ErrorMapper.message(outcome.error)))
+                    Outcome.Idle, Outcome.Loading -> Unit
+                }
+            }
         }
     }
 
