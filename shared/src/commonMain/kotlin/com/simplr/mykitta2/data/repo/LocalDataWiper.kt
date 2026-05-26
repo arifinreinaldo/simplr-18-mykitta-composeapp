@@ -18,10 +18,13 @@ fun interface LocalDataWiper {
 class MyKittaDatabaseWiper(
     private val database: MyKittaDatabase,
 ) : LocalDataWiper {
-    // Meta is a startup warm-up cache (intentionally left); Principal is the
-    // only user-scoped table today. Wrap multi-table wipes in a transaction
-    // when a second table lands.
+    // Meta is a startup warm-up cache (intentionally left). User-scoped tables
+    // are wiped together in a transaction so a partial failure can't leave
+    // mixed-tenancy rows on disk.
     override suspend fun wipeAll() {
-        database.principalQueries.deleteAll()
+        database.principalQueries.transaction {
+            database.principalQueries.deleteAll()
+            database.notificationQueries.deleteAll()
+        }
     }
 }

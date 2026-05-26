@@ -48,4 +48,39 @@ class MyKittaDatabaseWiperTest {
         MyKittaDatabaseWiper(db).wipeAll()
         assertEquals(emptyList(), db.principalQueries.selectAll().executeAsList())
     }
+
+    @Test fun wipeAll_emptiesNotificationTable() = runTest {
+        val db = freshDb()
+        db.notificationQueries.upsert(
+            id = "n1", title = "T1", description = "D", type = "Order",
+            payload = "{}", isRead = 0, createdAt = "2026-05-26T00:00:00Z",
+        )
+        db.notificationQueries.upsert(
+            id = "n2", title = "T2", description = "D", type = "Principal",
+            payload = "{}", isRead = 1, createdAt = "2026-05-26T00:00:01Z",
+        )
+        assertEquals(1L, db.notificationQueries.countUnread().executeAsOne())
+
+        MyKittaDatabaseWiper(db).wipeAll()
+
+        assertEquals(0L, db.notificationQueries.countUnread().executeAsOne())
+        assertEquals(emptyList(), db.notificationQueries.selectFirstPage(20).executeAsList())
+    }
+
+    @Test fun wipeAll_clearsPrincipalsAndNotificationsTogether() = runTest {
+        val db = freshDb()
+        db.principalQueries.upsert(
+            principalId = "p1", principalName = "Acme", principalImg = "",
+            isActive = 1, sortOrder = 0,
+        )
+        db.notificationQueries.upsert(
+            id = "n1", title = "T", description = "D", type = "Order",
+            payload = "{}", isRead = 0, createdAt = "2026-05-26T00:00:00Z",
+        )
+
+        MyKittaDatabaseWiper(db).wipeAll()
+
+        assertEquals(emptyList(), db.principalQueries.selectAll().executeAsList())
+        assertEquals(emptyList(), db.notificationQueries.selectFirstPage(20).executeAsList())
+    }
 }
