@@ -165,7 +165,13 @@ val featureAuthModule = module {
 }
 
 val featureHomeModule = module {
-    factory { HomeStoreFactory(storeFactory = get(), homeRepository = get()) }
+    factory {
+        HomeStoreFactory(
+            storeFactory = get(),
+            homeRepository = get(),
+            notificationRepository = get(),
+        )
+    }
     viewModelOf(::HomeViewModel)
 }
 

@@ -8,9 +8,11 @@ import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
 import com.simplr.mykitta2.core.error.ErrorMapper
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.repo.HomeRepository
+import com.simplr.mykitta2.data.repo.NotificationRepository
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Item
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
@@ -38,6 +40,12 @@ interface HomeStore : Store<HomeStore.Intent, HomeStore.State, HomeStore.Label> 
         /** Re-fetches just the loyalty balance — fired by the inline refresh
          *  button next to the points card. Does NOT re-fetch banners / rails. */
         data object RefreshPoints : Intent
+
+        /** Re-fetches just the unread-notification count from the server. Fired
+         *  by the Home-tab onClick (re-selection) — the count stream itself
+         *  updates locally on mark-as-read, but a server-side delivery while
+         *  the user is on another tab needs an explicit pull to surface. */
+        data object RefreshNotifications : Intent
         data class ItemClicked(val item: Item) : Intent
         data class BannerClicked(val banner: Banner) : Intent
     }
@@ -52,6 +60,7 @@ interface HomeStore : Store<HomeStore.Intent, HomeStore.State, HomeStore.Label> 
 class HomeStoreFactory(
     private val storeFactory: StoreFactory,
     private val homeRepository: HomeRepository,
+    private val notificationRepository: NotificationRepository,
 ) {
     fun create(): HomeStore =
         object : HomeStore,
@@ -66,6 +75,8 @@ class HomeStoreFactory(
 
     private sealed interface Action {
         data object LoadAll : Action
+        data object RefreshNotifCount : Action
+        data class NotifCountObserved(val count: Int) : Action
     }
 
     private sealed interface Message {
@@ -84,7 +95,16 @@ class HomeStoreFactory(
 
     private inner class BootstrapperImpl : CoroutineBootstrapper<Action>() {
         override fun invoke() {
+            // Subscribe to the canonical unread-count stream. Updates from
+            // anywhere (mark-as-read in NotificationStore, etc.) reach the
+            // badge with no cross-feature import.
+            scope.launch {
+                notificationRepository.unreadCount.collect { count ->
+                    dispatch(Action.NotifCountObserved(count))
+                }
+            }
             dispatch(Action.LoadAll)
+            dispatch(Action.RefreshNotifCount)
         }
     }
 
@@ -94,6 +114,8 @@ class HomeStoreFactory(
         override fun executeAction(action: Action) {
             when (action) {
                 Action.LoadAll -> loadAll()
+                Action.RefreshNotifCount -> refreshNotifCount()
+                is Action.NotifCountObserved -> dispatch(Message.NotifCountLoaded(action.count))
             }
         }
 
@@ -108,11 +130,20 @@ class HomeStoreFactory(
                     if (state().pointsLoading) return
                     loadPoints()
                 }
+                HomeStore.Intent.RefreshNotifications -> refreshNotifCount()
                 is HomeStore.Intent.ItemClicked ->
                     publish(HomeStore.Label.ShowSnackbar("${intent.item.productDesc} — detail page coming soon"))
                 is HomeStore.Intent.BannerClicked ->
                     publish(HomeStore.Label.ShowSnackbar(intent.banner.bannerName))
             }
+        }
+
+        /** Fire-and-forget server pull. Success updates the unreadCount flow,
+         *  which arrives back here as [Action.NotifCountObserved]. Failure is
+         *  intentionally silent: the badge stays at its prior value rather
+         *  than flickering to 0 on a transient network blip. */
+        private fun refreshNotifCount() {
+            scope.launch { notificationRepository.refreshCount() }
         }
 
         // Fans out three independent loads. Rails go through two phases:
@@ -161,13 +192,6 @@ class HomeStoreFactory(
                     Outcome.Idle, Outcome.Loading -> Unit
                 }
                 onFinished?.invoke()
-            }
-
-            scope.launch {
-                when (val outcome = homeRepository.loadNotificationCount()) {
-                    is Outcome.Success -> dispatch(Message.NotifCountLoaded(outcome.value))
-                    else -> Unit
-                }
             }
 
             loadPoints()

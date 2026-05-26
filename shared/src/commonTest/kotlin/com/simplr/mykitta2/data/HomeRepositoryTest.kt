@@ -56,10 +56,6 @@ class HomeRepositoryTest {
         ]]}}
     """.trimIndent()
 
-    private val notifCount7 = """
-        {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[{"count":7}]]}}
-    """.trimIndent()
-
     private data class Harness(
         val repo: DefaultHomeRepository,
         val captured: List<HttpRequestData>,
@@ -171,16 +167,6 @@ class HomeRepositoryTest {
         assertEquals(2, items.size)
         assertEquals("Soap", items[0].productDesc)
         assertEquals(true, items[1].isSoldOut)
-    }
-
-    // ---- loadNotificationCount ----
-
-    @Test fun loadNotificationCount_extractsCount() = runTest {
-        val (repo, captured) = harness { respond(notifCount7, HttpStatusCode.OK, jsonHeaders) }
-        val outcome = repo.loadNotificationCount()
-        assertEquals(Outcome.Success(7), outcome)
-        val body = bodyAsString(captured.single())
-        assertTrue(body.contains("\"functionName\":\"GetNotificationCount\""), body)
     }
 
     // ---- loadLoyaltyPoints ----

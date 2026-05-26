@@ -6,11 +6,16 @@ import com.arkivanov.mvikotlin.main.store.DefaultStoreFactory
 import com.simplr.mykitta2.core.error.AppError
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.repo.HomeRepository
+import com.simplr.mykitta2.data.repo.NotificationPage
+import com.simplr.mykitta2.data.repo.NotificationRepository
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Item
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -62,13 +67,11 @@ class HomeStoreTest {
     private class FakeHomeRepository(
         var bannersResult: Outcome<List<Banner>> = Outcome.Success(emptyList()),
         var configResult: Outcome<List<CategoryRail>> = Outcome.Success(emptyList()),
-        var notifResult: Outcome<Int> = Outcome.Success(0),
         var pointsResult: Outcome<Int> = Outcome.Success(0),
         var railItemsResults: MutableMap<String, Outcome<List<Item>>> = mutableMapOf(),
     ) : HomeRepository, JvmSerializable {
         var bannerCalls = 0
         var configCalls = 0
-        var notifCalls = 0
         var pointsCalls = 0
         val railItemCalls = mutableListOf<String>()
 
@@ -82,16 +85,43 @@ class HomeStoreTest {
             railItemCalls += functionName
             return railItemsResults[functionName] ?: Outcome.Success(emptyList())
         }
-        override suspend fun loadNotificationCount(): Outcome<Int> {
-            notifCalls++; return notifResult
-        }
         override suspend fun loadLoyaltyPoints(): Outcome<Int> {
             pointsCalls++; return pointsResult
         }
     }
 
-    private fun storeWith(repo: FakeHomeRepository): HomeStore =
-        HomeStoreFactory(storeFactory = DefaultStoreFactory(), homeRepository = repo).create()
+    /** Mirrors the real repository's `unreadCount` StateFlow + suspend surface
+     *  without touching SQLDelight or the network. */
+    private class FakeNotificationRepository(
+        initialCount: Int = 0,
+        var refreshResult: Outcome<Int> = Outcome.Success(initialCount),
+    ) : NotificationRepository {
+        private val _unread = MutableStateFlow(initialCount)
+        override val unreadCount: StateFlow<Int> = _unread.asStateFlow()
+        var refreshCountInvocations = 0
+            private set
+
+        fun setUnreadCount(n: Int) { _unread.value = n }
+
+        override suspend fun refreshCount(): Outcome<Int> {
+            refreshCountInvocations++
+            (refreshResult as? Outcome.Success<Int>)?.let { _unread.value = it.value }
+            return refreshResult
+        }
+        override suspend fun loadPage(offset: Int): Outcome<NotificationPage> =
+            error("not used by HomeStore")
+        override suspend fun markAsRead(id: String): Outcome<Unit> =
+            error("not used by HomeStore")
+    }
+
+    private fun storeWith(
+        repo: FakeHomeRepository,
+        notifRepo: FakeNotificationRepository = FakeNotificationRepository(),
+    ): HomeStore = HomeStoreFactory(
+        storeFactory = DefaultStoreFactory(),
+        homeRepository = repo,
+        notificationRepository = notifRepo,
+    ).create()
 
     // ---- Bootstrap ----
 
@@ -99,14 +129,14 @@ class HomeStoreTest {
         val repo = FakeHomeRepository(
             bannersResult = Outcome.Success(listOf(banner1)),
             configResult = Outcome.Success(emptyList()),
-            notifResult = Outcome.Success(3),
             pointsResult = Outcome.Success(2450),
         )
-        val store = storeWith(repo)
+        val notifRepo = FakeNotificationRepository(initialCount = 3)
+        val store = storeWith(repo, notifRepo)
 
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
-        assertEquals(1, repo.notifCalls)
+        assertEquals(1, notifRepo.refreshCountInvocations)
         assertEquals(1, repo.pointsCalls)
         assertEquals(listOf(banner1), store.state.banners)
         assertEquals(3, store.state.notifCount)
@@ -177,10 +207,13 @@ class HomeStoreTest {
     }
 
     @Test fun bootstrap_notifCountFailureDoesNotPoisonScreen() = runTest(dispatcher) {
-        // Notif count is fire-and-forget — failure leaves the count at 0 and
-        // doesn't surface as a screen-level error.
-        val repo = FakeHomeRepository(notifResult = Outcome.Failure(AppError.Network))
-        val store = storeWith(repo)
+        // Notif count is fire-and-forget — failure leaves the count at the
+        // prior flow value (0 here) and doesn't surface as a screen-level error.
+        val notifRepo = FakeNotificationRepository(
+            initialCount = 0,
+            refreshResult = Outcome.Failure(AppError.Network),
+        )
+        val store = storeWith(FakeHomeRepository(), notifRepo)
         assertEquals(0, store.state.notifCount)
         assertNull(store.state.error)
     }
@@ -214,16 +247,21 @@ class HomeStoreTest {
 
     // ---- Refresh ----
 
-    @Test fun refresh_reissuesAllChannels() = runTest(dispatcher) {
+    @Test fun refresh_reissuesAllHomeChannelsButNotNotifications() = runTest(dispatcher) {
+        // Pull-to-refresh on Home is for banners / rails / points. Notification
+        // count has its own dedicated refresh path (Home-tab onClick →
+        // RefreshNotifications) and the unreadCount flow updates reactively on
+        // local mark-as-read, so Refresh deliberately does NOT re-fetch it.
         val repo = FakeHomeRepository(
             configResult = Outcome.Success(listOf(mostBuyRail)),
             railItemsResults = mutableMapOf("GetMostBuy" to Outcome.Success(listOf(itemA))),
         )
-        val store = storeWith(repo)
+        val notifRepo = FakeNotificationRepository()
+        val store = storeWith(repo, notifRepo)
         // Bootstrap fired one round.
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
-        assertEquals(1, repo.notifCalls)
+        assertEquals(1, notifRepo.refreshCountInvocations)
         assertEquals(1, repo.pointsCalls)
         assertEquals(1, repo.railItemCalls.size)
 
@@ -231,7 +269,7 @@ class HomeStoreTest {
 
         assertEquals(2, repo.bannerCalls)
         assertEquals(2, repo.configCalls)
-        assertEquals(2, repo.notifCalls)
+        assertEquals(1, notifRepo.refreshCountInvocations)
         assertEquals(2, repo.pointsCalls)
         assertEquals(2, repo.railItemCalls.size)
     }
@@ -305,10 +343,11 @@ class HomeStoreTest {
 
     @Test fun refreshPoints_reissuesOnlyLoyaltyFetch() = runTest(dispatcher) {
         val repo = FakeHomeRepository(pointsResult = Outcome.Success(100))
-        val store = storeWith(repo)
+        val notifRepo = FakeNotificationRepository()
+        val store = storeWith(repo, notifRepo)
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
-        assertEquals(1, repo.notifCalls)
+        assertEquals(1, notifRepo.refreshCountInvocations)
         assertEquals(1, repo.pointsCalls)
 
         repo.pointsResult = Outcome.Success(250)
@@ -317,7 +356,7 @@ class HomeStoreTest {
         // Only the points channel re-fires; everything else stays at 1.
         assertEquals(1, repo.bannerCalls)
         assertEquals(1, repo.configCalls)
-        assertEquals(1, repo.notifCalls)
+        assertEquals(1, notifRepo.refreshCountInvocations)
         assertEquals(2, repo.pointsCalls)
         assertEquals(250, store.state.points)
         assertFalse(store.state.pointsLoading)
@@ -337,5 +376,38 @@ class HomeStoreTest {
         assertEquals(750, store.state.points)
         assertFalse(store.state.pointsLoading)
         assertNull(store.state.error)
+    }
+
+    // ---- Notification badge (NotificationRepository-backed) ----
+
+    @Test fun bootstrap_subscribesToUnreadCountFlow() = runTest(dispatcher) {
+        // The repo's StateFlow seeds the badge before any network call resolves.
+        val notifRepo = FakeNotificationRepository(initialCount = 5)
+        val store = storeWith(FakeHomeRepository(), notifRepo)
+        assertEquals(5, store.state.notifCount)
+    }
+
+    @Test fun unreadCount_flow_updates_propagateToState() = runTest(dispatcher) {
+        // After bootstrap, an out-of-band flow emission (e.g. NotificationStore
+        // marking an item read) must update the Home badge with no extra
+        // intent or refresh call.
+        val notifRepo = FakeNotificationRepository(initialCount = 5)
+        val store = storeWith(FakeHomeRepository(), notifRepo)
+        assertEquals(5, store.state.notifCount)
+
+        notifRepo.setUnreadCount(2)
+
+        assertEquals(2, store.state.notifCount)
+    }
+
+    @Test fun refreshNotifications_intent_callsRefreshCount() = runTest(dispatcher) {
+        val notifRepo = FakeNotificationRepository(initialCount = 0)
+        val store = storeWith(FakeHomeRepository(), notifRepo)
+        // Bootstrap already triggered one refresh.
+        assertEquals(1, notifRepo.refreshCountInvocations)
+
+        store.accept(HomeStore.Intent.RefreshNotifications)
+
+        assertEquals(2, notifRepo.refreshCountInvocations)
     }
 }
