@@ -119,6 +119,102 @@ class NotificationStoreTest {
         assertNotNull(store.state.error)
     }
 
+    // ---- TapItem ----
+
+    @Test fun tapItem_PRINCIPAL_cacheHit_publishesNavigateLabel_andMarksRead() = runTest(dispatcher) {
+        val notif = Notification(
+            id = "N1", title = "T", description = "D",
+            type = NotificationType.PRINCIPAL,
+            payload = """{"principalId":"P-1"}""",
+            isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false)),
+        ))
+        val princRepo = FakePrincipalRepository(byId = mapOf(
+            "P-1" to Principal("P-1", "Acme", "", true),
+        ))
+        val store = makeStore(repo, princRepo)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        assertEquals(NotificationStore.Label.NavigateToPrincipal("P-1", "Acme"), labels.single())
+        assertEquals(listOf("N1"), repo.markedRead)
+        assertTrue(store.state.items.first().isRead)
+    }
+
+    @Test fun tapItem_PRINCIPAL_cacheMiss_publishesUnsupported_andSnackbar() = runTest(dispatcher) {
+        val notif = Notification(
+            id = "N1", title = "T", description = "D",
+            type = NotificationType.PRINCIPAL,
+            payload = """{"principalId":"P-MISSING"}""",
+            isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false)),
+        ))
+        val store = makeStore(repo, FakePrincipalRepository())
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        assertTrue(labels.any { it is NotificationStore.Label.NavigateUnsupportedType })
+        assertTrue(labels.any {
+            it is NotificationStore.Label.ShowSnackbar && it.text == "Brand not available"
+        })
+    }
+
+    @Test fun tapItem_ORDER_publishesUnsupported_andMarksRead() = runTest(dispatcher) {
+        val notif = Notification(
+            id = "N2", title = "T", description = "D",
+            type = NotificationType.ORDER,
+            payload = "{}", isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false)),
+        ))
+        val store = makeStore(repo)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        assertEquals(NotificationStore.Label.NavigateUnsupportedType, labels.single())
+        assertEquals(listOf("N2"), repo.markedRead)
+        assertTrue(store.state.items.first().isRead)
+    }
+
+    @Test fun tapItem_markReadFails_stillPublishesNav_andShowsSnackbar() = runTest(dispatcher) {
+        val notif = Notification(
+            id = "N3", title = "T", description = "D",
+            type = NotificationType.ORDER,
+            payload = "{}", isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(
+            pages = mapOf(0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false))),
+            markReadResult = Outcome.Failure(AppError.Network),
+        )
+        val store = makeStore(repo)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        assertTrue(labels.any { it is NotificationStore.Label.NavigateUnsupportedType })
+        assertTrue(labels.any { it is NotificationStore.Label.ShowSnackbar })
+    }
+
     @Test fun loadNextPage_twice_doesNotDoubleAppendFromSameOffset() = runTest(dispatcher) {
         // Fires LoadNextPage twice in succession. The endReached guard prevents
         // the second call from re-loading the same offset and double-appending.

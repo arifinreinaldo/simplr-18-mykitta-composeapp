@@ -101,9 +101,54 @@ class NotificationStoreFactory(
                     loadPage(offset = s.offset, isFirstLoad = false)
                 }
                 NotificationStore.Intent.Refresh -> Unit                // Task 19
-                is NotificationStore.Intent.TapItem -> Unit             // Task 18
+                is NotificationStore.Intent.TapItem -> handleTap(intent.notification)
                 NotificationStore.Intent.DismissError -> dispatch(Message.ErrorSet(null))
             }
+        }
+
+        /** Tap handler: optimistically marks the item read (fail-open — UI flips
+         *  regardless), then type-routes to a nav label. PRINCIPAL needs a cache
+         *  lookup so we can pass the human-readable brand name; misses degrade
+         *  to a "brand not available" snackbar. */
+        private fun handleTap(notification: Notification) {
+            scope.launch {
+                when (val markOutcome = notificationRepository.markAsRead(notification.id)) {
+                    is Outcome.Success -> dispatch(Message.MarkedRead(notification.id))
+                    is Outcome.Failure -> {
+                        // Optimistic UI: still flip the dot even though the server
+                        // didn't confirm. The next refresh will reconcile.
+                        dispatch(Message.MarkedRead(notification.id))
+                        publish(NotificationStore.Label.ShowSnackbar(
+                            ErrorMapper.message(markOutcome.error)
+                        ))
+                    }
+                    Outcome.Idle, Outcome.Loading -> Unit
+                }
+                when (notification.type) {
+                    NotificationType.PRINCIPAL -> {
+                        val principalId = parsePrincipalId(notification.payload)
+                        val cached = principalId?.let { principalRepository.findById(it) }
+                        if (principalId != null && cached != null) {
+                            publish(NotificationStore.Label.NavigateToPrincipal(
+                                principalId = principalId,
+                                principalName = cached.principalName,
+                            ))
+                        } else {
+                            publish(NotificationStore.Label.NavigateUnsupportedType)
+                            publish(NotificationStore.Label.ShowSnackbar("Brand not available"))
+                        }
+                    }
+                    NotificationType.ORDER,
+                    NotificationType.UNKNOWN ->
+                        publish(NotificationStore.Label.NavigateUnsupportedType)
+                }
+            }
+        }
+
+        private fun parsePrincipalId(payload: String): String? = try {
+            json.parseToJsonElement(payload).jsonObject["principalId"]?.jsonPrimitive?.content
+        } catch (t: Throwable) {
+            null
         }
 
         private fun loadPage(offset: Int, isFirstLoad: Boolean) {
