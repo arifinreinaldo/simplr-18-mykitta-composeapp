@@ -1,0 +1,42 @@
+-- User-scoped shipment-address cache. Refreshed from `GetShipmentAddress` via
+-- CatalogApi.getShipmentAddresses; written through after a successful
+-- `User/AddAddress`. AddressRepository is the only writer; the list screen
+-- subscribes to `selectAll` and reacts to upserts.
+--
+-- `fetchedAt` is per-row epoch-millis. Cache TTL is 24h (addresses change
+-- rarely); pull-to-refresh on the list screen bypasses the TTL.
+-- Wiped on logout via [com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper].
+CREATE TABLE IF NOT EXISTS Address (
+    customerAddressId TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    address1 TEXT NOT NULL DEFAULT '',
+    address2 TEXT NOT NULL DEFAULT '',
+    zipcode TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    contact TEXT NOT NULL DEFAULT '',
+    barangay TEXT NOT NULL DEFAULT '',
+    province TEXT NOT NULL DEFAULT '',
+    subdivision TEXT NOT NULL DEFAULT '',
+    isSelected INTEGER NOT NULL DEFAULT 0,
+    fetchedAt INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM Address ORDER BY isSelected DESC, name COLLATE NOCASE ASC;
+
+selectById:
+SELECT * FROM Address WHERE customerAddressId = :customerAddressId;
+
+countAll:
+SELECT COUNT(*) FROM Address;
+
+oldestFetchedAt:
+SELECT MIN(fetchedAt) FROM Address;
+
+upsert:
+INSERT OR REPLACE INTO Address(customerAddressId, name, address1, address2, zipcode, city, phone, contact, barangay, province, subdivision, isSelected, fetchedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteAll:
+DELETE FROM Address;

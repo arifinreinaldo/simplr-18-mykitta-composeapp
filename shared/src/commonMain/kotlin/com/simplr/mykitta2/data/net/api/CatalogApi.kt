@@ -1,5 +1,7 @@
 package com.simplr.mykitta2.data.net.api
 
+import com.simplr.mykitta2.data.net.dto.AddressListServerResponse
+import com.simplr.mykitta2.data.net.dto.AddressRequest
 import com.simplr.mykitta2.data.net.dto.BannerServerResponse
 import com.simplr.mykitta2.data.net.dto.ConfigListResponse
 import com.simplr.mykitta2.data.net.dto.GetRequest
@@ -8,6 +10,7 @@ import com.simplr.mykitta2.data.net.dto.ItemServerResponse
 import com.simplr.mykitta2.data.net.dto.LoyaltyPointsServerResponse
 import com.simplr.mykitta2.data.net.dto.MarkNotificationReadRequest
 import com.simplr.mykitta2.data.net.dto.MarkNotificationReadResponse
+import com.simplr.mykitta2.data.net.dto.MessageServerResponse
 import com.simplr.mykitta2.data.net.dto.NotifCountServerResponse
 import com.simplr.mykitta2.data.net.dto.NotificationListServerResponse
 import com.simplr.mykitta2.data.net.dto.PrincipalServerResponse
@@ -39,6 +42,8 @@ interface CatalogApi {
     suspend fun getLoyaltyPoints(baseUrl: String, request: GetRequest): LoyaltyPointsServerResponse
     suspend fun getProfile(baseUrl: String, request: GetRequest): ProfileServerResponse
     suspend fun getHistory(baseUrl: String, request: GetRequest): HistoryServerResponse
+    suspend fun getShipmentAddresses(baseUrl: String, request: GetRequest): AddressListServerResponse
+    suspend fun saveAddress(baseUrl: String, request: AddressRequest): MessageServerResponse
 }
 
 class KtorCatalogApi(private val client: HttpClient) : CatalogApi {
@@ -95,4 +100,12 @@ class KtorCatalogApi(private val client: HttpClient) : CatalogApi {
 
     override suspend fun getHistory(baseUrl: String, request: GetRequest) =
         call<HistoryServerResponse>(baseUrl, request)
+
+    override suspend fun getShipmentAddresses(baseUrl: String, request: GetRequest) =
+        call<AddressListServerResponse>(baseUrl, request)
+
+    override suspend fun saveAddress(baseUrl: String, request: AddressRequest) =
+        callPath<AddressRequest, MessageServerResponse>(
+            baseUrl, listOf("User", "AddAddress"), request,
+        )
 }

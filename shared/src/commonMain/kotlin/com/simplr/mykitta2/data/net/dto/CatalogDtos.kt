@@ -213,3 +213,16 @@ data class PrincipalDto(
         isActive = isActive == true,
     )
 }
+
+/**
+ * Standard envelope for dedicated POST write endpoints (e.g. `User/AddAddress`,
+ * future `User/SubmitOrder`) that return a thin status message rather than a
+ * data payload. `resultCode` of `0` (or a backend-specific success code) plus
+ * a non-error `resultMsg` indicates success; callers are responsible for
+ * mapping non-2xx HTTP responses to failures via [com.simplr.mykitta2.core.error.ErrorMapper].
+ */
+@Serializable
+data class MessageServerResponse(
+    val resultCode: Int? = null,
+    val resultMsg: String? = null,
+)

@@ -26,6 +26,7 @@ class MyKittaDatabaseWiper(
             database.principalQueries.deleteAll()
             database.notificationQueries.deleteAll()
             database.historyQueries.deleteAll()
+            database.addressQueries.deleteAll()
         }
     }
 }
