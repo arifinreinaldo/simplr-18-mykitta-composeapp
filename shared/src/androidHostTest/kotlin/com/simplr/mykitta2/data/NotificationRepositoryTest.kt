@@ -91,10 +91,12 @@ class NotificationRepositoryTest {
      * `hasMoreRecords` flag is included so the "ignores server" test can lie to us.
      */
     private fun buildItemsJson(count: Int, startId: Int, hasMoreRecords: Int = 0): String {
+        // Mirrors the live GetNotificationData wire shape: lowercase keys,
+        // snake_case is_read/created_at, Int id, is_read=-1 for unread.
         val items = (0 until count).joinToString(",") { i ->
             val id = startId + i
-            """{"Id":"N$id","Title":"T$id","Description":"D$id","Type":"Order",
-               "Payload":"{}","IsRead":0,"CreatedAt":"2026-05-${10 + (i % 20)}T00:00:00Z"}"""
+            """{"id":$id,"title":"T$id","description":"D$id","type":"Order",
+               "payload":"{}","is_read":-1,"created_at":"2026-05-${10 + (i % 20)}T00:00:00Z"}"""
         }
         return """{"getObjectResult":{"errorData":{"code":0,"description":""},
             "hasMoreRecords":$hasMoreRecords,"objectData":[[$items]]}}""".trimIndent()

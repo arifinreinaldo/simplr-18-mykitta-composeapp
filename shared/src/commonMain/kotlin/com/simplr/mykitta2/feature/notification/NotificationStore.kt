@@ -149,7 +149,9 @@ class NotificationStoreFactory(
         }
 
         private fun parsePrincipalId(payload: String): String? = try {
-            json.parseToJsonElement(payload).jsonObject["principalId"]?.jsonPrimitive?.content
+            // Wire key is Pascal-case `PrincipalId` per the live
+            // GetNotificationData response.
+            json.parseToJsonElement(payload).jsonObject["PrincipalId"]?.jsonPrimitive?.content
         } catch (t: Throwable) {
             null
         }

@@ -145,7 +145,7 @@ class NotificationStoreTest {
         val notif = Notification(
             id = "N1", title = "T", description = "D",
             type = NotificationType.PRINCIPAL,
-            payload = """{"principalId":"P-1"}""",
+            payload = """{"PrincipalId":"P-1"}""",
             isRead = false, createdAt = "2026-05-26T00:00:00Z",
         )
         val repo = FakeNotificationRepository(pages = mapOf(
@@ -171,7 +171,7 @@ class NotificationStoreTest {
         val notif = Notification(
             id = "N1", title = "T", description = "D",
             type = NotificationType.PRINCIPAL,
-            payload = """{"principalId":"P-MISSING"}""",
+            payload = """{"PrincipalId":"P-MISSING"}""",
             isRead = false, createdAt = "2026-05-26T00:00:00Z",
         )
         val repo = FakeNotificationRepository(pages = mapOf(

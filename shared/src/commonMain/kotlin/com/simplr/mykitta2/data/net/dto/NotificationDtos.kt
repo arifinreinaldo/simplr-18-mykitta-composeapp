@@ -19,18 +19,25 @@ data class NotificationListServerResponse(
     fun items(): List<NotificationDto> = getObjectResult.objectData.firstOrNull().orEmpty()
 }
 
+/**
+ * Live wire format is lowercase / snake_case despite legacy's Pascal-case
+ * convention elsewhere in the catalog. `id` is an Int on the wire; we coerce to
+ * String at the domain boundary so the mark-read endpoint (which takes a string
+ * id) can use it directly. `is_read` is `-1` for unread, `1` for read — only
+ * `1` counts as read. Other values (`0`, missing) fall through to unread.
+ */
 @Serializable
 data class NotificationDto(
-    @SerialName("Id") val id: String? = null,
-    @SerialName("Title") val title: String? = null,
-    @SerialName("Description") val description: String? = null,
-    @SerialName("Type") val type: String? = null,
-    @SerialName("Payload") val payload: String? = null,
-    @SerialName("IsRead") val isRead: Int = 0,
-    @SerialName("CreatedAt") val createdAt: String? = null,
+    @SerialName("id") val id: Int? = null,
+    @SerialName("title") val title: String? = null,
+    @SerialName("description") val description: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("payload") val payload: String? = null,
+    @SerialName("is_read") val isRead: Int = -1,
+    @SerialName("created_at") val createdAt: String? = null,
 ) {
     fun toDomain() = Notification(
-        id = id.orEmpty(),
+        id = id?.toString().orEmpty(),
         title = title.orEmpty(),
         description = description.orEmpty(),
         type = NotificationType.fromWire(type),
