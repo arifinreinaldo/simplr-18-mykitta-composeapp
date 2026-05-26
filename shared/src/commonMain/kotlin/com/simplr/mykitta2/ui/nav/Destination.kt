@@ -32,4 +32,9 @@ sealed interface Destination {
      *  (matches the Search pattern). */
     @Serializable
     data object ProfileDetail : Destination
+
+    /** Reached from the 🔔 button on Home. Top-level so the bottom-nav is
+     *  hidden while the user is on the notification list. */
+    @Serializable
+    data object Notifications : Destination
 }

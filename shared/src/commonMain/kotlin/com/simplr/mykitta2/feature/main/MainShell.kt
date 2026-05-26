@@ -46,6 +46,7 @@ import com.simplr.mykitta2.ui.nav.MainTab
 fun MainShell(
     onOpenSearch: () -> Unit = {},
     onOpenProfileDetail: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val tabNavController = rememberNavController()
@@ -63,11 +64,11 @@ fun MainShell(
         ) {
             composable<MainTab.Home> {
                 HomeScreen(
-                    // Cart, Chat, Notifications screens land in later phases —
-                    // keep callbacks as no-ops for now so the icons still react.
+                    // Cart and Chat screens land in later phases — keep their
+                    // callbacks as no-ops for now so the icons still react.
                     onOpenCart = { /* Cart destination lands in a later phase. */ },
                     onOpenChat = { /* Chat destination lands in a later phase. */ },
-                    onOpenNotifications = { /* Notification destination lands in a later phase. */ },
+                    onOpenNotifications = onOpenNotifications,
                     onOpenRewards = { tabNavController.switchTab(MainTab.Rewards) },
                     onOpenSearch = onOpenSearch,
                 )

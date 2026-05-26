@@ -12,9 +12,11 @@ import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
 import com.simplr.mykitta2.feature.main.MainShell
+import com.simplr.mykitta2.feature.notification.NotificationScreen
 import com.simplr.mykitta2.feature.profile.ProfileDetailScreen
 import com.simplr.mykitta2.feature.search.SearchScreen
 import com.simplr.mykitta2.feature.splash.SplashStore
+import com.simplr.mykitta2.ui.nav.PendingNavStore
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -68,6 +70,7 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
             MainShell(
                 onOpenSearch = { navController.navigate(Destination.Search) },
                 onOpenProfileDetail = { navController.navigate(Destination.ProfileDetail) },
+                onOpenNotifications = { navController.navigate(Destination.Notifications) },
                 onLogout = {
                     // Wipe local session, then drop the whole signed-in graph so
                     // VMs die and the system Back button on Login exits the app
@@ -88,6 +91,20 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
         }
         composable<Destination.ProfileDetail> {
             ProfileDetailScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Destination.Notifications> {
+            // Tapping a PRINCIPAL notification needs to deep-link into a
+            // sibling NavController (MainShell's tab graph). PendingNavStore
+            // carries that intent across — write here, pop back, MainShell
+            // observes and navigates on its side.
+            val pendingNavStore: PendingNavStore = koinInject()
+            NotificationScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPrincipal = { principalId, principalName ->
+                    pendingNavStore.requestPrincipalCatalog(principalId, principalName)
+                    navController.popBackStack()
+                },
+            )
         }
         // Retained for tests / debug routing; no longer reachable from the OTP
         // verify path. Safe to remove once nothing references it.
