@@ -119,6 +119,26 @@ class NotificationStoreTest {
         assertNotNull(store.state.error)
     }
 
+    // ---- Refresh ----
+
+    @Test fun refresh_resetsState_andReloadsFirstPage() = runTest(dispatcher) {
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(notifications(20), hasMore = true)),
+        ))
+        val store = makeStore(repo)
+        assertEquals(20, store.state.items.size)
+
+        repo.pages = mapOf(
+            0 to Outcome.Success(NotificationPage(
+                notifications(count = 5, startId = 100), hasMore = false)),
+        )
+        store.accept(NotificationStore.Intent.Refresh)
+
+        assertEquals(5, store.state.items.size)
+        assertTrue(store.state.endReached)
+        assertEquals(5, store.state.offset)
+    }
+
     // ---- TapItem ----
 
     @Test fun tapItem_PRINCIPAL_cacheHit_publishesNavigateLabel_andMarksRead() = runTest(dispatcher) {

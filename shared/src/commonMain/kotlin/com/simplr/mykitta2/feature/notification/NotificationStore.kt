@@ -100,7 +100,10 @@ class NotificationStoreFactory(
                     if (s.loadingMore || s.endReached || s.firstLoadInFlight) return
                     loadPage(offset = s.offset, isFirstLoad = false)
                 }
-                NotificationStore.Intent.Refresh -> Unit                // Task 19
+                NotificationStore.Intent.Refresh -> {
+                    dispatch(Message.Reset)
+                    loadPage(offset = 0, isFirstLoad = true)
+                }
                 is NotificationStore.Intent.TapItem -> handleTap(intent.notification)
                 NotificationStore.Intent.DismissError -> dispatch(Message.ErrorSet(null))
             }
