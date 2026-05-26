@@ -35,10 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.simplr.mykitta2.core.env.BuildEnv
 import com.simplr.mykitta2.data.prefs.ThemeStore
 import com.simplr.mykitta2.domain.ThemeMode
 import com.simplr.mykitta2.ui.common.MyKittaScaffold
@@ -106,34 +108,42 @@ fun ProfileScreen(
     val themeMode by themeStore.mode.collectAsStateWithLifecycle()
 
     MyKittaScaffold(title = "Profile") { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item("header") {
-                // Header tracks `state.profile.custName` once GetProfile lands.
-                // While we wait for the first cache hit / network response on a
-                // cold first open, fall back to a generic greeting — surfacing
-                // the legacy `Session.userName` (a phone number) here would look
-                // weird, and we don't want to flash it for half a second.
-                ProfileHeader(
-                    name = state.headerName.ifBlank { "there" },
-                    subtitle = "Welcome back",
-                )
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item("header") {
+                    // Header tracks `state.profile.custName` once GetProfile lands.
+                    // While we wait for the first cache hit / network response on a
+                    // cold first open, fall back to a generic greeting — surfacing
+                    // the legacy `Session.userName` (a phone number) here would look
+                    // weird, and we don't want to flash it for half a second.
+                    ProfileHeader(
+                        name = state.headerName.ifBlank { "there" },
+                        subtitle = "Welcome back",
+                    )
+                }
+                items(items = SECTIONS, key = { it.title }) { section ->
+                    MenuSectionCard(
+                        section = section,
+                        onClick = { id ->
+                            // Theme is handled in-screen via dialog; everything else
+                            // bubbles up so MainShell can route to a dedicated screen.
+                            if (id == "theme") showThemePicker = true
+                            else onMenuClick(id)
+                        },
+                    )
+                }
             }
-            items(items = SECTIONS, key = { it.title }) { section ->
-                MenuSectionCard(
-                    section = section,
-                    onClick = { id ->
-                        // Theme is handled in-screen via dialog; everything else
-                        // bubbles up so MainShell can route to a dedicated screen.
-                        if (id == "theme") showThemePicker = true
-                        else onMenuClick(id)
-                    },
-                )
-            }
-            item("logout") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                VersionLabel()
                 LogoutButton(onClick = { showLogoutConfirm = true })
             }
         }
@@ -353,6 +363,19 @@ private fun MenuRow(item: MenuItem, onClick: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+@Composable
+private fun VersionLabel() {
+    Text(
+        text = "Simplr Ver.${BuildEnv.versionName}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+    )
 }
 
 @Composable
