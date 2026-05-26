@@ -378,7 +378,6 @@ private fun Rail(
             }
         }
         Spacer(Modifier.height(4.dp))
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
     }
 }
 

@@ -98,4 +98,94 @@ class AuthCountryFormatterTest {
         assertFalse(AuthCountryFormatter.isValid(Country.PH, ""))
         assertFalse(AuthCountryFormatter.isValid(Country.SG, ""))
     }
+
+    // --- formattedOffsetFor() — raw → display cursor ---
+    // Guards the login-screen bug where the caret landed before the last digit
+    // whenever formatting injected a space.
+
+    @Test fun phFormattedOffset_emptyStaysAtZero() {
+        assertEquals(0, AuthCountryFormatter.formattedOffsetFor(Country.PH, 0))
+    }
+
+    @Test fun phFormattedOffset_beforeFirstSpace() {
+        // raw "917" cursor=3 → display "917" cursor=3 (no space inserted yet)
+        assertEquals(3, AuthCountryFormatter.formattedOffsetFor(Country.PH, 3))
+    }
+
+    @Test fun phFormattedOffset_pastFirstSpace() {
+        // raw "9171" cursor=4 → display "917 1" cursor=5
+        assertEquals(5, AuthCountryFormatter.formattedOffsetFor(Country.PH, 4))
+    }
+
+    @Test fun phFormattedOffset_pastSecondSpace() {
+        // raw "9171234" cursor=7 → display "917 123 4" cursor=9
+        assertEquals(9, AuthCountryFormatter.formattedOffsetFor(Country.PH, 7))
+    }
+
+    @Test fun phFormattedOffset_atEnd() {
+        // raw "9171234567" cursor=10 → display "917 123 4567" cursor=12
+        assertEquals(12, AuthCountryFormatter.formattedOffsetFor(Country.PH, 10))
+    }
+
+    @Test fun sgFormattedOffset_pastSpace() {
+        // raw "81234" cursor=5 → display "8123 4" cursor=6
+        assertEquals(6, AuthCountryFormatter.formattedOffsetFor(Country.SG, 5))
+    }
+
+    @Test fun sgFormattedOffset_atEnd() {
+        // raw "81234567" cursor=8 → display "8123 4567" cursor=9
+        assertEquals(9, AuthCountryFormatter.formattedOffsetFor(Country.SG, 8))
+    }
+
+    // --- rawOffsetFor() — display → raw cursor ---
+
+    @Test fun phRawOffset_emptyStaysAtZero() {
+        assertEquals(0, AuthCountryFormatter.rawOffsetFor(Country.PH, 0))
+    }
+
+    @Test fun phRawOffset_atFirstGroupBoundary() {
+        // display "917 ..." cursor=3 → raw cursor=3
+        assertEquals(3, AuthCountryFormatter.rawOffsetFor(Country.PH, 3))
+    }
+
+    @Test fun phRawOffset_insideFirstSpaceSnapsToGroupEnd() {
+        // display "917 1" cursor=4 (inside the space) → raw cursor=3
+        assertEquals(3, AuthCountryFormatter.rawOffsetFor(Country.PH, 4))
+    }
+
+    @Test fun phRawOffset_pastFirstSpace() {
+        // display "917 1" cursor=5 → raw "9171" cursor=4
+        assertEquals(4, AuthCountryFormatter.rawOffsetFor(Country.PH, 5))
+    }
+
+    @Test fun phRawOffset_atEnd() {
+        // display "917 123 4567" cursor=12 → raw cursor=10
+        assertEquals(10, AuthCountryFormatter.rawOffsetFor(Country.PH, 12))
+    }
+
+    @Test fun sgRawOffset_pastSpace() {
+        // display "8123 4" cursor=6 → raw "81234" cursor=5
+        assertEquals(5, AuthCountryFormatter.rawOffsetFor(Country.SG, 6))
+    }
+
+    @Test fun sgRawOffset_atEnd() {
+        // display "8123 4567" cursor=9 → raw "81234567" cursor=8
+        assertEquals(8, AuthCountryFormatter.rawOffsetFor(Country.SG, 9))
+    }
+
+    // --- inversion property — round-trip must be lossless on group boundaries ---
+
+    @Test fun phRoundTripIsIdentityForEveryRawOffset() {
+        for (n in 0..10) {
+            val transformed = AuthCountryFormatter.formattedOffsetFor(Country.PH, n)
+            assertEquals(n, AuthCountryFormatter.rawOffsetFor(Country.PH, transformed))
+        }
+    }
+
+    @Test fun sgRoundTripIsIdentityForEveryRawOffset() {
+        for (n in 0..8) {
+            val transformed = AuthCountryFormatter.formattedOffsetFor(Country.SG, n)
+            assertEquals(n, AuthCountryFormatter.rawOffsetFor(Country.SG, transformed))
+        }
+    }
 }

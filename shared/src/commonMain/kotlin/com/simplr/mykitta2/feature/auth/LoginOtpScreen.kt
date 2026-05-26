@@ -41,8 +41,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -211,8 +215,13 @@ private fun PhoneField(
     onOpenCountrySelector: () -> Unit,
 ) {
     val shape = remember { RoundedCornerShape(14.dp) }
+    // Bind the raw (digit-only) value and let VisualTransformation render the
+    // spaced view. The String-overload TextField clamps the cursor offset on
+    // external value changes, so feeding it the formatted string lands the
+    // caret before the last digit whenever a space is injected.
+    val visualTransformation = remember(state.country) { PhoneVisualTransformation(state.country) }
     OutlinedTextField(
-        value = state.phoneFormatted,
+        value = state.phoneRaw,
         onValueChange = onPhoneChanged,
         placeholder = {
             Text(
@@ -226,6 +235,7 @@ private fun PhoneField(
         singleLine = true,
         shape = shape,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        visualTransformation = visualTransformation,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,
             unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
@@ -234,6 +244,24 @@ private fun PhoneField(
             .fillMaxWidth()
             .height(60.dp),
     )
+}
+
+private class PhoneVisualTransformation(private val country: Country) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val formatted = AuthCountryFormatter.format(country, text.text)
+        return TransformedText(AnnotatedString(formatted), PhoneOffsetMapping(country))
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is PhoneVisualTransformation && other.country == country
+    override fun hashCode(): Int = country.hashCode()
+}
+
+private class PhoneOffsetMapping(private val country: Country) : OffsetMapping {
+    override fun originalToTransformed(offset: Int): Int =
+        AuthCountryFormatter.formattedOffsetFor(country, offset)
+    override fun transformedToOriginal(offset: Int): Int =
+        AuthCountryFormatter.rawOffsetFor(country, offset)
 }
 
 @Composable
