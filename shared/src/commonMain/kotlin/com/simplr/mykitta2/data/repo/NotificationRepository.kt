@@ -59,18 +59,30 @@ class DefaultNotificationRepository(
         count
     }
 
-    override suspend fun loadPage(offset: Int): Outcome<NotificationPage> = runCall {
-        val response = catalogApi.getNotificationList(
-            baseUrl(),
-            supervisorRequest("GetNotificationData", offset = offset),
-        )
-        val items = response.items().map { it.toDomain() }
-        if (offset == 0) upsertCache(items)
-        NotificationPage(
-            items = items,
-            hasMore = items.size >= PAGE_SIZE,    // server's hasMoreRecords is unreliable; size-short is truth
-            fromCache = false,
-        )
+    override suspend fun loadPage(offset: Int): Outcome<NotificationPage> {
+        val networkOutcome = runCall {
+            val response = catalogApi.getNotificationList(
+                baseUrl(),
+                supervisorRequest("GetNotificationData", offset = offset),
+            )
+            val items = response.items().map { it.toDomain() }
+            if (offset == 0) upsertCache(items)
+            NotificationPage(
+                items = items,
+                hasMore = items.size >= PAGE_SIZE,    // server's hasMoreRecords is unreliable; size-short is truth
+                fromCache = false,
+            )
+        }
+        // Offline fallback: only for first page. Deeper pages surface the original
+        // failure so the UI can show a "load more failed — retry" affordance.
+        return if (networkOutcome is Outcome.Failure && offset == 0) {
+            val cached = readCacheFirstPage()
+            if (cached.isNotEmpty()) {
+                Outcome.Success(NotificationPage(items = cached, hasMore = false, fromCache = true))
+            } else {
+                networkOutcome
+            }
+        } else networkOutcome
     }
 
     override suspend fun markAsRead(id: String): Outcome<Unit> =
