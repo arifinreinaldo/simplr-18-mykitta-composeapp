@@ -83,6 +83,60 @@ class NotificationStoreTest {
         assertTrue(store.state.showingCache)
     }
 
+    // ---- LoadNextPage ----
+
+    @Test fun loadNextPage_success_appendsItems_andAdvancesOffset() = runTest(dispatcher) {
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(notifications(20, startId = 1), hasMore = true)),
+            20 to Outcome.Success(NotificationPage(notifications(20, startId = 21), hasMore = true)),
+        ))
+        val store = makeStore(repo)
+        store.accept(NotificationStore.Intent.LoadNextPage)
+        assertEquals(40, store.state.items.size)
+        assertEquals(40, store.state.offset)
+        assertFalse(store.state.loadingMore)
+    }
+
+    @Test fun loadNextPage_noop_whenEndReached() = runTest(dispatcher) {
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(notifications(5), hasMore = false)),
+        ))
+        val store = makeStore(repo)
+        assertTrue(store.state.endReached)
+        store.accept(NotificationStore.Intent.LoadNextPage)
+        assertEquals(5, store.state.items.size)
+    }
+
+    @Test fun loadNextPage_failure_setsError_retainsItems() = runTest(dispatcher) {
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(notifications(20), hasMore = true)),
+            20 to Outcome.Failure(AppError.Network),
+        ))
+        val store = makeStore(repo)
+        store.accept(NotificationStore.Intent.LoadNextPage)
+        assertEquals(20, store.state.items.size)
+        assertFalse(store.state.loadingMore)
+        assertNotNull(store.state.error)
+    }
+
+    @Test fun loadNextPage_twice_doesNotDoubleAppendFromSameOffset() = runTest(dispatcher) {
+        // Fires LoadNextPage twice in succession. The endReached guard prevents
+        // the second call from re-loading the same offset and double-appending.
+        // (Pure in-flight reentrancy isn't observable under UnconfinedTestDispatcher
+        // because the launch resumes synchronously on the same stack — but a
+        // missing guard would still produce 60 items here, so this catches it.)
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(notifications(20), hasMore = true)),
+            20 to Outcome.Success(NotificationPage(notifications(20, startId = 21), hasMore = false)),
+        ))
+        val store = makeStore(repo)
+        store.accept(NotificationStore.Intent.LoadNextPage)
+        assertEquals(40, store.state.items.size)
+        assertTrue(store.state.endReached)
+        store.accept(NotificationStore.Intent.LoadNextPage)
+        assertEquals(40, store.state.items.size)
+    }
+
     // ---- Helpers ----
 
     private fun makeStore(

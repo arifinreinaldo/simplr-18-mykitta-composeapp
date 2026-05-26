@@ -94,10 +94,15 @@ class NotificationStoreFactory(
         }
 
         override fun executeIntent(intent: NotificationStore.Intent) {
-            // LoadNextPage / TapItem / Refresh implemented in Tasks 17-19.
             when (intent) {
+                NotificationStore.Intent.LoadNextPage -> {
+                    val s = state()
+                    if (s.loadingMore || s.endReached || s.firstLoadInFlight) return
+                    loadPage(offset = s.offset, isFirstLoad = false)
+                }
+                NotificationStore.Intent.Refresh -> Unit                // Task 19
+                is NotificationStore.Intent.TapItem -> Unit             // Task 18
                 NotificationStore.Intent.DismissError -> dispatch(Message.ErrorSet(null))
-                else -> Unit
             }
         }
 
