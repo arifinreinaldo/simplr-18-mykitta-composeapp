@@ -146,6 +146,61 @@ class NotificationRepositoryTest {
         assertIs<Outcome.Failure>(second)   // no cache to fall back on
     }
 
+    @Test fun markAsRead_success_hitsDedicatedEndpoint_decrementsCount_updatesCache() = runTest {
+        val captured = mutableListOf<HttpRequestData>()
+        val responses = mutableListOf<MockRequestHandler>(
+            // 1. seed cache with one row (so we can confirm the row is marked read)
+            { req -> captured += req
+              respond(buildItemsJson(count = 1, startId = 7), HttpStatusCode.OK, jsonHeaders) },
+            // 2. seed unread count to 5
+            { req -> captured += req
+              respond("""{"getObjectResult":{"errorData":{"code":0,"description":""},
+                  "hasMoreRecords":0,"objectData":[[{"count":5}]]}}""".trimIndent(),
+                  HttpStatusCode.OK, jsonHeaders) },
+            // 3. markAsRead response
+            { req -> captured += req
+              respond("""{"errorData":{"code":0,"description":""}}""", HttpStatusCode.OK, jsonHeaders) },
+        )
+        val repo = harnessSequence(responses)
+        repo.loadPage(0)
+        repo.refreshCount()
+        assertEquals(5, repo.unreadCount.value)
+
+        val outcome = repo.markAsRead("N7")
+        assertIs<Outcome.Success<Unit>>(outcome)
+        assertEquals(4, repo.unreadCount.value)
+
+        val markReadCall = captured.last()
+        assertTrue(markReadCall.url.toString().endsWith("/Notification/ReadNotification"))
+    }
+
+    @Test fun markAsRead_serverFailure_doesNotMutateState() = runTest {
+        val responses = mutableListOf<MockRequestHandler>(
+            // seed count to 3
+            { respond("""{"getObjectResult":{"errorData":{"code":0,"description":""},
+                "hasMoreRecords":0,"objectData":[[{"count":3}]]}}""".trimIndent(),
+                HttpStatusCode.OK, jsonHeaders) },
+            // markAsRead 500
+            { respondError(HttpStatusCode.InternalServerError) },
+        )
+        val repo = harnessSequence(responses)
+        repo.refreshCount()
+        assertEquals(3, repo.unreadCount.value)
+
+        val outcome = repo.markAsRead("N1")
+        assertIs<Outcome.Failure>(outcome)
+        assertEquals(3, repo.unreadCount.value)  // unchanged
+    }
+
+    @Test fun markAsRead_whenCountIsZero_clamps_doesNotGoNegative() = runTest {
+        val repo = harness { respond("""{"errorData":{"code":0,"description":""}}""",
+            HttpStatusCode.OK, jsonHeaders) }
+        // unreadCount defaults to 0; mark a row read while count is already 0
+        val outcome = repo.markAsRead("Whatever")
+        assertIs<Outcome.Success<Unit>>(outcome)
+        assertEquals(0, repo.unreadCount.value)  // clamped at 0, no negative
+    }
+
     /**
      * Build a repo wired to a MockEngine. Session + country are pre-seeded so
      * `baseUrl()` and `supervisorRequest()` resolve cleanly.

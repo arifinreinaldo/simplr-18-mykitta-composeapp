@@ -85,8 +85,11 @@ class DefaultNotificationRepository(
         } else networkOutcome
     }
 
-    override suspend fun markAsRead(id: String): Outcome<Unit> =
-        throw NotImplementedError("Task 11")
+    override suspend fun markAsRead(id: String): Outcome<Unit> = runCall {
+        catalogApi.markNotificationRead(baseUrl(), MarkNotificationReadRequest(notifId = id))
+        db.notificationQueries.markRead(id)
+        _unreadCount.update { (it - 1).coerceAtLeast(0) }
+    }
 
     private suspend fun baseUrl(): String =
         BuildEnv.baseUrlFor(countryStore.read() ?: Country.PH)
