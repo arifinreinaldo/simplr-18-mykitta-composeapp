@@ -136,4 +136,75 @@ class HistoryRepositoryTest {
         assertEquals("INV-2", rows[0].invNo)
         assertEquals(OrderStatus.WAITING, rows[0].status)
     }
+
+    // --- TTL gate -----------------------------------------------------------
+
+    @Test fun refresh_withinTtl_skipsNetwork() = runTest {
+        val clock = FakeClock()
+        val (client, callCount) = mockClient {
+            respond(content = pageBody(listOf("INV-1"), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client, clock)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)              // first hit populates cache
+        clock.advance(1.minutes)                    // still within TTL (5 min default)
+        val second = r.refresh(OrderStatus.WAITING) // should NOT hit network
+
+        assertIs<Outcome.Success<HasMore>>(second)
+        assertEquals(1, callCount(), "TTL hit must short-circuit the network")
+    }
+
+    @Test fun refresh_pastTtl_refetches() = runTest {
+        val clock = FakeClock()
+        val (client, callCount) = mockClient {
+            respond(content = pageBody(listOf("INV-1"), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client, clock)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+        clock.advance(6.minutes)                    // past 5-min TTL
+        r.refresh(OrderStatus.WAITING)
+
+        assertEquals(2, callCount(), "stale cache must trigger a refetch")
+    }
+
+    @Test fun refresh_force_alwaysHitsNetwork() = runTest {
+        val clock = FakeClock()
+        val (client, callCount) = mockClient {
+            respond(content = pageBody(listOf("INV-1"), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client, clock)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+        clock.advance(30.seconds)                   // way inside TTL
+        r.refresh(OrderStatus.WAITING, force = true)
+
+        assertEquals(2, callCount(), "force=true bypasses TTL")
+    }
+
+    @Test fun refresh_emptyCache_alwaysHitsNetwork_evenWithinTtl() = runTest {
+        // Edge: TTL is irrelevant when there are zero rows; treat as a miss.
+        val clock = FakeClock()
+        val (client, callCount) = mockClient {
+            respond(content = pageBody(emptyList(), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client, clock)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+        r.refresh(OrderStatus.WAITING)
+
+        assertEquals(2, callCount())
+    }
 }
