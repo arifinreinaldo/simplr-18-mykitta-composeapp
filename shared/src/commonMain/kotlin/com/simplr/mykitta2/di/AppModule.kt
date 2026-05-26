@@ -24,11 +24,13 @@ import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
+import com.simplr.mykitta2.data.repo.DefaultNotificationRepository
 import com.simplr.mykitta2.data.repo.DefaultPrincipalRepository
 import com.simplr.mykitta2.data.repo.DefaultProfileRepository
 import com.simplr.mykitta2.data.repo.HomeRepository
 import com.simplr.mykitta2.data.repo.LocalDataWiper
 import com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper
+import com.simplr.mykitta2.data.repo.NotificationRepository
 import com.simplr.mykitta2.data.repo.PrincipalRepository
 import com.simplr.mykitta2.data.repo.ProfileRepository
 import com.simplr.mykitta2.feature.auth.LoginOtpStoreFactory
@@ -111,6 +113,14 @@ val repositoryModule = module {
     }
     single<HomeRepository> {
         DefaultHomeRepository(catalogApi = get(), sessionStore = get(), countryStore = get())
+    }
+    single<NotificationRepository> {
+        DefaultNotificationRepository(
+            catalogApi = get(),
+            sessionStore = get(),
+            countryStore = get(),
+            db = get(),
+        )
     }
     single<PrincipalRepository> {
         DefaultPrincipalRepository(
