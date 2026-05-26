@@ -12,11 +12,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -27,10 +31,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.simplr.mykitta2.feature.home.HomeScreen
+import com.simplr.mykitta2.feature.home.HomeStore
+import com.simplr.mykitta2.feature.home.HomeViewModel
 import com.simplr.mykitta2.feature.principal.PrincipalScreen
 import com.simplr.mykitta2.feature.profile.ProfileScreen
 import com.simplr.mykitta2.ui.common.PlatformBackButton
 import com.simplr.mykitta2.ui.nav.MainTab
+import com.simplr.mykitta2.ui.nav.PendingNavStore
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * Post-auth shell. Owns its own NavController so tab switches don't pollute the
@@ -53,8 +62,45 @@ fun MainShell(
     val currentDest = tabNavController.currentBackStackEntryAsState().value?.destination
     val uriHandler = LocalUriHandler.current
 
+    // Hoist HomeViewModel here so the bottom-bar can dispatch
+    // RefreshNotifications on Home tab re-selection. Tab switches recreate the
+    // Home composable but the ViewModel survives via Koin.
+    val homeViewModel: HomeViewModel = koinViewModel()
+    val hasFiredInitialRefresh = rememberSaveable { mutableStateOf(false) }
+
+    // PendingNavStore lives on the outer NavController side; we observe it here
+    // so a notification's PRINCIPAL deep-link can switch tabs + push the catalog
+    // screen in the inner NavController.
+    val pendingNavStore: PendingNavStore = koinInject()
+    val pending by pendingNavStore.pendingPrincipal.collectAsStateWithLifecycle()
+    LaunchedEffect(pending) {
+        val target = pending ?: return@LaunchedEffect
+        tabNavController.switchTab(MainTab.Principal)
+        tabNavController.navigate(
+            MainTab.PrincipalCatalog(
+                principalId = target.principalId,
+                principalName = target.principalName,
+            )
+        )
+        pendingNavStore.consume()
+    }
+
     Scaffold(
-        bottomBar = { MainBottomBar(currentDest, tabNavController) },
+        bottomBar = {
+            MainBottomBar(
+                currentDest = currentDest,
+                navController = tabNavController,
+                onHomeSelected = { wasAlreadyOnHome ->
+                    // First selection during bootstrap is fired by NavHost
+                    // resolving the start destination — guard against it so we
+                    // don't pile a redundant GetNotificationCount onto bootstrap.
+                    if (hasFiredInitialRefresh.value && !wasAlreadyOnHome) {
+                        homeViewModel.accept(HomeStore.Intent.RefreshNotifications)
+                    }
+                    hasFiredInitialRefresh.value = true
+                },
+            )
+        },
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         NavHost(
@@ -64,6 +110,7 @@ fun MainShell(
         ) {
             composable<MainTab.Home> {
                 HomeScreen(
+                    viewModel = homeViewModel,
                     // Cart and Chat screens land in later phases — keep their
                     // callbacks as no-ops for now so the icons still react.
                     onOpenCart = { /* Cart destination lands in a later phase. */ },
@@ -138,13 +185,21 @@ private fun PrincipalCatalogStub(principalName: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun MainBottomBar(currentDest: NavDestination?, navController: NavController) {
+private fun MainBottomBar(
+    currentDest: NavDestination?,
+    navController: NavController,
+    onHomeSelected: (wasAlreadyOnHome: Boolean) -> Unit = {},
+) {
     NavigationBar {
         // 4 explicit items rather than a list-driven loop so `hasRoute<T>()` keeps
         // its reified type — no reflection, no string-matching on class names.
         NavigationBarItem(
             selected = currentDest?.hasRoute<MainTab.Home>() == true,
-            onClick = { navController.switchTab(MainTab.Home) },
+            onClick = {
+                val wasAlreadyOnHome = currentDest?.hasRoute<MainTab.Home>() == true
+                navController.switchTab(MainTab.Home)
+                onHomeSelected(wasAlreadyOnHome)
+            },
             icon = { Text("🏠", fontSize = 18.sp) },
             label = { Text("Home") },
         )
