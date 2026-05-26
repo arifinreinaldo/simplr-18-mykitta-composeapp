@@ -376,8 +376,9 @@ Out of test scope: `PullToRefreshBox` visual behavior, `PrimaryTabRow` scroll-in
 | 1 | Server status string drift — backend changes "Finished" to "Completed". | `fromWire` is `equalsIgnoreCase`; novel statuses drop silently. **Verify the 4 strings via Chucker against staging before merge.** |
 | 2 | DTO field names inferred from wiki, not raw JSON. | Confirm via Chucker; only `HistoryDtos.kt` changes if drift. |
 | 3 | `Total` numeric type — server may send string. | If hit, add `kotlinx.serialization` adapter; isolated. |
-| 4 | TTL across country switch (PH ↔ SG). | Country is sticky from login today; mid-session switch isn't supported. If that changes, wipe History on `CountryStore.set(...)`. **Flagged for the impl plan, not designed here.** |
-| 5 | `MyKittaDatabaseWiper` extension is easy to forget when adding tables. | `DatabaseWiperTest.includesHistory` is the regression guard. |
+| 4 | `MyKittaDatabaseWiper` extension is easy to forget when adding tables. | `DatabaseWiperTest.includesHistory` is the regression guard. |
+
+Country-scoping is N/A: `CountryStore` is logout-only (no mid-session toggle), and logout already wipes the History table.
 
 ## 11. Implementation order (sketch)
 
