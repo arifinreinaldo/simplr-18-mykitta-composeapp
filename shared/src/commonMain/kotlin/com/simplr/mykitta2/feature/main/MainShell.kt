@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
@@ -49,6 +50,7 @@ fun MainShell(
 ) {
     val tabNavController = rememberNavController()
     val currentDest = tabNavController.currentBackStackEntryAsState().value?.destination
+    val uriHandler = LocalUriHandler.current
 
     Scaffold(
         bottomBar = { MainBottomBar(currentDest, tabNavController) },
@@ -93,11 +95,14 @@ fun MainShell(
             composable<MainTab.Profile> {
                 ProfileScreen(
                     onMenuClick = { id ->
-                        // Only "profile" has a destination wired today; the
-                        // rest of the menu rows (stores, shipment, history,
-                        // principal, faq, tutorial, about) remain stubs until
+                        // "profile" routes to the detail screen; "about" opens
+                        // the project intro video. The rest (stores, shipment,
+                        // history, principal, faq, tutorial) remain stubs until
                         // their feature surfaces land.
-                        if (id == "profile") onOpenProfileDetail()
+                        when (id) {
+                            "profile" -> onOpenProfileDetail()
+                            "about" -> uriHandler.openUri("https://www.youtube.com/watch?v=phrPUil2_7E")
+                        }
                     },
                     onLogout = onLogout,
                 )

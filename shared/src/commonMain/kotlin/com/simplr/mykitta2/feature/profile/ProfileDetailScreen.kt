@@ -30,10 +30,8 @@ import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * Dedicated profile-detail page reached from the My Profile tab's "Profile"
- * menu row. Renders the GetProfile fields the user cares about (CustName,
- * Phone, ICPartner, GSTNo) with friendly labels. Email is intentionally
- * omitted from the UI — the field is still parsed by [ProfileDto] so we can
- * surface it elsewhere later without a wire-format change.
+ * menu row. Renders all GetProfile fields with friendly labels: CustName,
+ * Phone, Email, ICPartner (as "Registration No"), GSTNo (as "Tax No").
  *
  * Re-uses [ProfileViewModel] (factory-scoped in Koin → a fresh instance per
  * screen), which means the bootstrap fires another `loadProfile()` — but
@@ -79,7 +77,7 @@ private fun ProfileDetailContent(profile: Profile, padding: PaddingValues) {
             DetailCard(
                 title = "REGISTRATION",
                 rows = listOf(
-                    "Registration No" to profile.icPartner,
+                    "Outlet No" to profile.icPartner,
                     "Tax No" to profile.gstNo,
                 ),
             )
