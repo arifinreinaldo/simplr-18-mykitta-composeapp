@@ -51,8 +51,13 @@ class DefaultNotificationRepository(
     private val _unreadCount = MutableStateFlow(0)
     override val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
-    override suspend fun refreshCount(): Outcome<Int> =
-        throw NotImplementedError("Task 8")
+    override suspend fun refreshCount(): Outcome<Int> = runCall {
+        val count = catalogApi
+            .getNotificationCount(baseUrl(), supervisorRequest("GetNotificationCount"))
+            .count()
+        _unreadCount.value = count
+        count
+    }
 
     override suspend fun loadPage(offset: Int): Outcome<NotificationPage> =
         throw NotImplementedError("Task 9")
