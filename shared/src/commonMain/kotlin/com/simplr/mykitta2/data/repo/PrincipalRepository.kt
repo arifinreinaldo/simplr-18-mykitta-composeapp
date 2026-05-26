@@ -26,6 +26,10 @@ interface PrincipalRepository {
      *  Errors surface via [Outcome.Failure]; the cache flow keeps its prior
      *  value so the UI shows last-known good data + an error banner. */
     suspend fun refresh(): Outcome<Unit>
+
+    /** Synchronous cache lookup — returns null if the principal isn't cached
+     *  yet (cold start before [refresh] runs, or genuinely-unknown id). */
+    suspend fun findById(principalId: String): Principal?
 }
 
 class DefaultPrincipalRepository(
@@ -70,6 +74,11 @@ class DefaultPrincipalRepository(
     } catch (t: Throwable) {
         Outcome.Failure(ErrorMapper.from(t))
     }
+
+    override suspend fun findById(principalId: String): Principal? =
+        database.principalQueries.selectById(principalId)
+            .executeAsOneOrNull()
+            ?.toDomain()
 
     private fun PrincipalRow.toDomain() = Principal(
         principalId = principalId,
