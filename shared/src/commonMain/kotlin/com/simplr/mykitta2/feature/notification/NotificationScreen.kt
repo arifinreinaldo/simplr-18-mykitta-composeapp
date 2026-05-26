@@ -20,6 +20,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -156,6 +162,7 @@ private fun NotificationRow(
     notification: Notification,
     onClick: () -> Unit,
 ) {
+    val imageUrl = remember(notification.payload) { parseImageUrl(notification.payload) }
     Surface(
         onClick = onClick,
         color = if (notification.isRead) MaterialTheme.colorScheme.surface
@@ -176,6 +183,18 @@ private fun NotificationRow(
                     ),
             )
             Spacer(Modifier.width(12.dp))
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     text = notification.title,
@@ -253,4 +272,18 @@ private fun FullScreenLoader(padding: PaddingValues) {
         modifier = Modifier.fillMaxSize().padding(padding),
         contentAlignment = Alignment.Center,
     ) { CircularProgressIndicator() }
+}
+
+private val payloadJson = Json { ignoreUnknownKeys = true }
+
+/** Extracts the per-row image URL from the notification payload. Principal
+ *  notifications carry `principalUrl`; order notifications carry `productUrl`.
+ *  Returns null when neither is present or the payload doesn't parse — caller
+ *  hides the icon entirely in that case. */
+private fun parseImageUrl(payload: String): String? = try {
+    val obj = payloadJson.parseToJsonElement(payload).jsonObject
+    val raw = (obj["principalUrl"] ?: obj["productUrl"])?.jsonPrimitive?.content?.trim()
+    raw?.takeIf { it.isNotEmpty() }
+} catch (t: Throwable) {
+    null
 }
