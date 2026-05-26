@@ -1,5 +1,6 @@
 package com.simplr.mykitta2.data
 
+import com.simplr.mykitta2.data.net.api.KtorCatalogApi
 import com.simplr.mykitta2.data.repo.DefaultPrincipalRepository
 import com.simplr.mykitta2.data.prefs.SettingsCountryStore
 import com.simplr.mykitta2.data.prefs.SettingsSessionStore
@@ -32,6 +33,7 @@ class PrincipalRepositoryFindByIdTest {
         val repo = repo(db)
         val result = repo.findById("P-1")
         assertEquals("Acme Co", result?.principalName)
+        assertEquals(true, result?.isActive)
     }
 
     @Test
@@ -48,7 +50,7 @@ class PrincipalRepositoryFindByIdTest {
                 headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
         }) { install(ContentNegotiation) { json() } }
         return DefaultPrincipalRepository(
-            catalogApi = com.simplr.mykitta2.data.net.api.KtorCatalogApi(client),
+            catalogApi = KtorCatalogApi(client),
             database = db,
             sessionStore = SettingsSessionStore(settings),
             countryStore = SettingsCountryStore(settings),
