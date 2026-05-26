@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 fun MyKittaScaffold(
     title: String? = null,
     onBack: (() -> Unit)? = null,
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -29,6 +30,7 @@ fun MyKittaScaffold(
                 )
             }
         },
+        snackbarHost = snackbarHost,
         content = content,
     )
 }
