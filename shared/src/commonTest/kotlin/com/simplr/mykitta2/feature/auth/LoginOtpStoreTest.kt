@@ -65,6 +65,7 @@ class LoginOtpStoreTest {
         ): Outcome<Session> = Outcome.Success(
             Session(userName = "user", supervisorCode = "S1", isSupervisor = false)
         )
+        override suspend fun logout(): Outcome<Unit> = Outcome.Success(Unit)
     }
 
     private class Harness(

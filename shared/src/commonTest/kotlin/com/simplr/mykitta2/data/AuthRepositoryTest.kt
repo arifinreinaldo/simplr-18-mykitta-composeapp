@@ -4,11 +4,16 @@ import com.russhwolf.settings.MapSettings
 import com.simplr.mykitta2.core.error.AppError
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.net.api.KtorAuthApi
+import com.simplr.mykitta2.data.prefs.CountryStore
+import com.simplr.mykitta2.data.prefs.ProfileCacheStore
+import com.simplr.mykitta2.data.prefs.SettingsCountryStore
+import com.simplr.mykitta2.data.prefs.SettingsProfileCacheStore
 import com.simplr.mykitta2.data.prefs.SettingsSessionStore
 import com.simplr.mykitta2.data.prefs.SettingsTokenStore
 import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.prefs.SessionStore
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
+import com.simplr.mykitta2.data.repo.LocalDataWiper
 import com.simplr.mykitta2.domain.Country
 import com.simplr.mykitta2.domain.Session
 import io.ktor.client.HttpClient
@@ -28,6 +33,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -59,13 +65,31 @@ class AuthRepositoryTest {
         }
     """.trimIndent()
 
-    private fun stores(): Pair<TokenStore, SessionStore> {
+    private data class Stores(
+        val token: TokenStore,
+        val session: SessionStore,
+        val country: CountryStore,
+        val profileCache: ProfileCacheStore,
+    )
+
+    private fun stores(): Stores {
         val settings = MapSettings()
-        return SettingsTokenStore(settings) to SettingsSessionStore(settings)
+        return Stores(
+            token = SettingsTokenStore(settings),
+            session = SettingsSessionStore(settings),
+            country = SettingsCountryStore(settings),
+            profileCache = SettingsProfileCacheStore(settings),
+        )
     }
 
-    private fun repo(handler: io.ktor.client.engine.mock.MockRequestHandler):
-        Pair<DefaultAuthRepository, MutableList<HttpRequestData>> {
+    /** Default wiper for tests that don't exercise logout — a no-op is fine
+     *  because the login/verify paths never call it. */
+    private val noopWiper = LocalDataWiper { /* no-op */ }
+
+    private fun repo(
+        wiper: LocalDataWiper = noopWiper,
+        handler: io.ktor.client.engine.mock.MockRequestHandler,
+    ): Pair<DefaultAuthRepository, MutableList<HttpRequestData>> {
         val captured = mutableListOf<HttpRequestData>()
         val client = HttpClient(MockEngine { request ->
             captured += request
@@ -74,8 +98,15 @@ class AuthRepositoryTest {
             expectSuccess = true
             install(ContentNegotiation) { json() }
         }
-        val (tokenStore, sessionStore) = stores()
-        return DefaultAuthRepository(KtorAuthApi(client), tokenStore, sessionStore) to captured
+        val s = stores()
+        return DefaultAuthRepository(
+            api = KtorAuthApi(client),
+            tokenStore = s.token,
+            sessionStore = s.session,
+            countryStore = s.country,
+            profileCacheStore = s.profileCache,
+            localDataWiper = wiper,
+        ) to captured
     }
 
     private fun bodyAsString(request: HttpRequestData): String =
@@ -155,13 +186,22 @@ class AuthRepositoryTest {
         val settings = MapSettings()
         val tokenStore = SettingsTokenStore(settings)
         val sessionStore = SettingsSessionStore(settings)
+        val countryStore = SettingsCountryStore(settings)
+        val profileCacheStore = SettingsProfileCacheStore(settings)
         val client = HttpClient(MockEngine {
             respond(content = verifySuccessBody, status = HttpStatusCode.OK, headers = jsonHeaders)
         }) {
             expectSuccess = true
             install(ContentNegotiation) { json() }
         }
-        val r = DefaultAuthRepository(KtorAuthApi(client), tokenStore, sessionStore)
+        val r = DefaultAuthRepository(
+            api = KtorAuthApi(client),
+            tokenStore = tokenStore,
+            sessionStore = sessionStore,
+            countryStore = countryStore,
+            profileCacheStore = profileCacheStore,
+            localDataWiper = noopWiper,
+        )
 
         val outcome = r.verifyLoginOtp("9171234567", "1234", Country.PH)
         assertIs<Outcome.Success<Session>>(outcome)
@@ -178,6 +218,84 @@ class AuthRepositoryTest {
         assertEquals("9171234567", session.userName)
         assertEquals("S1", session.supervisorCode)
         assertEquals(true, session.isSupervisor)
+    }
+
+    // --- logout ---
+
+    @Test fun logout_clearsTokenSessionCountryAndCallsWiper() = runTest {
+        val settings = MapSettings()
+        val tokenStore = SettingsTokenStore(settings).also {
+            it.write(
+                com.simplr.mykitta2.data.prefs.TokenPair(
+                    access = "a", refresh = "r",
+                    expiresAt = kotlin.time.Clock.System.now(),
+                )
+            )
+        }
+        val sessionStore = SettingsSessionStore(settings).also {
+            it.write(Session(userName = "u", supervisorCode = "s", isSupervisor = true))
+        }
+        val countryStore = SettingsCountryStore(settings).also { it.write(Country.PH) }
+        val profileCacheStore = SettingsProfileCacheStore(settings).also {
+            it.write(com.simplr.mykitta2.domain.Profile(custName = "cached-outlet"))
+        }
+        var wipeCount = 0
+        val wiper = LocalDataWiper { wipeCount += 1 }
+
+        val r = DefaultAuthRepository(
+            api = KtorAuthApi(HttpClient(MockEngine { respond("", HttpStatusCode.OK) })),
+            tokenStore = tokenStore,
+            sessionStore = sessionStore,
+            countryStore = countryStore,
+            profileCacheStore = profileCacheStore,
+            localDataWiper = wiper,
+        )
+
+        val outcome = r.logout()
+
+        assertEquals(Outcome.Success(Unit), outcome)
+        assertNull(tokenStore.read(), "token should be cleared")
+        assertNull(sessionStore.read(), "session should be cleared")
+        assertNull(countryStore.read(), "country should be cleared")
+        assertNull(profileCacheStore.read(), "profile cache should be cleared")
+        assertEquals(1, wipeCount, "wiper should be called exactly once")
+    }
+
+    @Test fun logout_isIdempotentOnAlreadyEmptyState() = runTest {
+        // No prior writes — all stores start empty. Logout must not throw.
+        val s = stores()
+        val r = DefaultAuthRepository(
+            api = KtorAuthApi(HttpClient(MockEngine { respond("", HttpStatusCode.OK) })),
+            tokenStore = s.token,
+            sessionStore = s.session,
+            countryStore = s.country,
+            profileCacheStore = s.profileCache,
+            localDataWiper = noopWiper,
+        )
+        assertEquals(Outcome.Success(Unit), r.logout())
+    }
+
+    @Test fun logout_wiperThrows_returnsFailureButTokensStillCleared() = runTest {
+        // Token is cleared first by design (de-authenticate ASAP); even when the
+        // wiper later blows up, the user is signed out at the HTTP boundary.
+        val s = stores()
+        s.token.write(
+            com.simplr.mykitta2.data.prefs.TokenPair(
+                access = "a", refresh = "r",
+                expiresAt = kotlin.time.Clock.System.now(),
+            )
+        )
+        val r = DefaultAuthRepository(
+            api = KtorAuthApi(HttpClient(MockEngine { respond("", HttpStatusCode.OK) })),
+            tokenStore = s.token,
+            sessionStore = s.session,
+            countryStore = s.country,
+            profileCacheStore = s.profileCache,
+            localDataWiper = LocalDataWiper { error("boom") },
+        )
+        val outcome = r.logout()
+        assertIs<Outcome.Failure>(outcome)
+        assertNull(s.token.read(), "token must be cleared even when wiper fails")
     }
 
     @Test fun verifyLoginOtp_http422ReturnsHttpFailure() = runTest {

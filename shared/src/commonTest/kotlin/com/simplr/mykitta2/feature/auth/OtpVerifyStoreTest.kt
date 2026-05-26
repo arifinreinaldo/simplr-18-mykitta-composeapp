@@ -55,6 +55,7 @@ class OtpVerifyStoreTest {
             verifyCalls += Triple(userIdDigits, otp, country)
             return verifyResult
         }
+        override suspend fun logout(): Outcome<Unit> = Outcome.Success(Unit)
     }
 
     private fun store(

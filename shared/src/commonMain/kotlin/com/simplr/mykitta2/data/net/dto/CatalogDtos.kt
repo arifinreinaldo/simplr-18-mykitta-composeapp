@@ -3,6 +3,7 @@ package com.simplr.mykitta2.data.net.dto
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.Item
 import com.simplr.mykitta2.domain.Principal
+import com.simplr.mykitta2.domain.Profile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -156,6 +157,46 @@ data class LoyaltyPointsDto(@SerialName("Points") val points: Int = 0)
 data class PrincipalServerResponse(
     @SerialName("getObjectResult") val getObjectResult: GetObjectResult<PrincipalDto>,
 )
+
+/**
+ * `GetProfile` (via `User/GetObject`) — the legacy `Repository.getProfile()` (Repository.kt:708).
+ * Cached for 24h via [com.simplr.mykitta2.data.prefs.ProfileCacheStore] so the
+ * profile screens paint instantly on re-open; a fresh fetch fires only when
+ * the cache is older than the TTL or absent.
+ *
+ * Field names mirror the live backend response verbatim (`CustName`, `Phone`,
+ * `email`, `ICPartner`, `GSTNo`). The server returns the same record three
+ * times inside `objectData[0]`; [firstOrNull] picks the first and ignores the
+ * duplicates. `email` is parsed but not surfaced in the UI today.
+ *
+ * Every field is optional + null-defaulted so the parser survives partial
+ * responses; `ignoreUnknownKeys = true` in
+ * [com.simplr.mykitta2.data.net.KtorClientFactory] absorbs any extra keys.
+ */
+@Serializable
+data class ProfileServerResponse(
+    @SerialName("getObjectResult") val getObjectResult: GetObjectResult<ProfileDto>,
+) {
+    /** Collapse the envelope to a single profile object (or null if missing). */
+    fun firstOrNull(): ProfileDto? = getObjectResult.objectData.firstOrNull()?.firstOrNull()
+}
+
+@Serializable
+data class ProfileDto(
+    @SerialName("CustName") val custName: String? = null,
+    @SerialName("Phone") val phone: String? = null,
+    @SerialName("email") val email: String? = null,
+    @SerialName("ICPartner") val icPartner: String? = null,
+    @SerialName("GSTNo") val gstNo: String? = null,
+) {
+    fun toDomain() = Profile(
+        custName = custName.orEmpty(),
+        phone = phone.orEmpty(),
+        email = email.orEmpty(),
+        icPartner = icPartner.orEmpty(),
+        gstNo = gstNo.orEmpty(),
+    )
+}
 
 @Serializable
 data class PrincipalDto(

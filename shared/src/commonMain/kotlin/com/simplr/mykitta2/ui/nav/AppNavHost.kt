@@ -1,21 +1,28 @@
 package com.simplr.mykitta2.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.domain.Country
 import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
 import com.simplr.mykitta2.feature.main.MainShell
+import com.simplr.mykitta2.feature.profile.ProfileDetailScreen
 import com.simplr.mykitta2.feature.search.SearchScreen
 import com.simplr.mykitta2.feature.splash.SplashStore
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 @Composable
 fun AppNavHost(startDestination: SplashStore.Destination) {
     val navController = rememberNavController()
+    val authRepository: AuthRepository = koinInject()
+    val logoutScope = rememberCoroutineScope()
     val initialRoute: Destination = when (startDestination) {
         SplashStore.Destination.Home -> Destination.Home
         SplashStore.Destination.Login -> Destination.LoginOtp
@@ -60,10 +67,27 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
             // and the per-tab child NavController.
             MainShell(
                 onOpenSearch = { navController.navigate(Destination.Search) },
+                onOpenProfileDetail = { navController.navigate(Destination.ProfileDetail) },
+                onLogout = {
+                    // Wipe local session, then drop the whole signed-in graph so
+                    // VMs die and the system Back button on Login exits the app
+                    // instead of bouncing the user back into Home. We don't
+                    // surface logout failures — the user asked to leave; trapping
+                    // them on Profile is worse than a partially-cleared DB.
+                    logoutScope.launch {
+                        authRepository.logout()
+                        navController.navigate(Destination.LoginOtp) {
+                            popUpTo(Destination.Home) { inclusive = true }
+                        }
+                    }
+                },
             )
         }
         composable<Destination.Search> {
             SearchScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Destination.ProfileDetail> {
+            ProfileDetailScreen(onBack = { navController.popBackStack() })
         }
         // Retained for tests / debug routing; no longer reachable from the OTP
         // verify path. Safe to remove once nothing references it.

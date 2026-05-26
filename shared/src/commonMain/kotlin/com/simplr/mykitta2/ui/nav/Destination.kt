@@ -26,4 +26,10 @@ sealed interface Destination {
 
     @Serializable
     data object Search : Destination
+
+    /** Drill-down from the My Profile tab's "Profile" menu row. Top-level so
+     *  the bottom-nav is hidden while the user is on the detail screen
+     *  (matches the Search pattern). */
+    @Serializable
+    data object ProfileDetail : Destination
 }

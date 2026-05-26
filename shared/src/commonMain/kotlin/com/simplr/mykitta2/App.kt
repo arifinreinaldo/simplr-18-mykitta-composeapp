@@ -5,10 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
+import com.simplr.mykitta2.data.prefs.ThemeStore
 import com.simplr.mykitta2.di.IMAGE_HTTP_CLIENT
 import com.simplr.mykitta2.feature.splash.SplashStore
 import com.simplr.mykitta2.ui.nav.AppNavHost
@@ -33,7 +35,10 @@ fun App() {
             .build()
     }
 
-    MyKittaTheme {
+    val themeStore: ThemeStore = koinInject()
+    val themeMode by themeStore.mode.collectAsStateWithLifecycle()
+
+    MyKittaTheme(themeMode = themeMode) {
         // Splash sits outside the nav graph so it can't be navigated back to.
         // We persist the resolved destination name across rotation — splashing
         // again after a config change would be jarring. The enum is round-tripped

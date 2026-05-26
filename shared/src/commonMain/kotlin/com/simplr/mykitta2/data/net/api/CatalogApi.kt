@@ -7,6 +7,7 @@ import com.simplr.mykitta2.data.net.dto.ItemServerResponse
 import com.simplr.mykitta2.data.net.dto.LoyaltyPointsServerResponse
 import com.simplr.mykitta2.data.net.dto.NotifCountServerResponse
 import com.simplr.mykitta2.data.net.dto.PrincipalServerResponse
+import com.simplr.mykitta2.data.net.dto.ProfileServerResponse
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.post
@@ -30,6 +31,7 @@ interface CatalogApi {
     suspend fun getNotificationCount(baseUrl: String, request: GetRequest): NotifCountServerResponse
     suspend fun getPrincipals(baseUrl: String, request: GetRequest): PrincipalServerResponse
     suspend fun getLoyaltyPoints(baseUrl: String, request: GetRequest): LoyaltyPointsServerResponse
+    suspend fun getProfile(baseUrl: String, request: GetRequest): ProfileServerResponse
 }
 
 class KtorCatalogApi(private val client: HttpClient) : CatalogApi {
@@ -58,4 +60,7 @@ class KtorCatalogApi(private val client: HttpClient) : CatalogApi {
 
     override suspend fun getLoyaltyPoints(baseUrl: String, request: GetRequest) =
         call<LoyaltyPointsServerResponse>(baseUrl, request)
+
+    override suspend fun getProfile(baseUrl: String, request: GetRequest) =
+        call<ProfileServerResponse>(baseUrl, request)
 }

@@ -11,18 +11,26 @@ import com.simplr.mykitta2.data.net.api.CatalogApi
 import com.simplr.mykitta2.data.net.api.KtorAuthApi
 import com.simplr.mykitta2.data.net.api.KtorCatalogApi
 import com.simplr.mykitta2.data.prefs.CountryStore
+import com.simplr.mykitta2.data.prefs.ProfileCacheStore
 import com.simplr.mykitta2.data.prefs.SessionStore
 import com.simplr.mykitta2.data.prefs.SettingsCountryStore
 import com.simplr.mykitta2.data.prefs.SettingsFactory
+import com.simplr.mykitta2.data.prefs.SettingsProfileCacheStore
 import com.simplr.mykitta2.data.prefs.SettingsSessionStore
+import com.simplr.mykitta2.data.prefs.SettingsThemeStore
 import com.simplr.mykitta2.data.prefs.SettingsTokenStore
+import com.simplr.mykitta2.data.prefs.ThemeStore
 import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
 import com.simplr.mykitta2.data.repo.DefaultPrincipalRepository
+import com.simplr.mykitta2.data.repo.DefaultProfileRepository
 import com.simplr.mykitta2.data.repo.HomeRepository
+import com.simplr.mykitta2.data.repo.LocalDataWiper
+import com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper
 import com.simplr.mykitta2.data.repo.PrincipalRepository
+import com.simplr.mykitta2.data.repo.ProfileRepository
 import com.simplr.mykitta2.feature.auth.LoginOtpStoreFactory
 import com.simplr.mykitta2.feature.auth.LoginOtpViewModel
 import com.simplr.mykitta2.feature.auth.OtpVerifyArgs
@@ -32,6 +40,8 @@ import com.simplr.mykitta2.feature.home.HomeStoreFactory
 import com.simplr.mykitta2.feature.home.HomeViewModel
 import com.simplr.mykitta2.feature.principal.PrincipalStoreFactory
 import com.simplr.mykitta2.feature.principal.PrincipalViewModel
+import com.simplr.mykitta2.feature.profile.ProfileStoreFactory
+import com.simplr.mykitta2.feature.profile.ProfileViewModel
 import com.simplr.mykitta2.feature.splash.SplashStoreFactory
 import com.simplr.mykitta2.feature.splash.SplashViewModel
 import org.koin.core.context.startKoin
@@ -58,6 +68,12 @@ val prefsModule = module {
     single<SessionStore> {
         SettingsSessionStore(get<SettingsFactory>().plainSettings("mykitta.session"))
     }
+    single<ThemeStore> {
+        SettingsThemeStore(get<SettingsFactory>().plainSettings("mykitta.prefs"))
+    }
+    single<ProfileCacheStore> {
+        SettingsProfileCacheStore(get<SettingsFactory>().plainSettings("mykitta.profile"))
+    }
 }
 
 val databaseModule = module {
@@ -82,8 +98,16 @@ val networkModule = module {
 const val IMAGE_HTTP_CLIENT = "imageHttpClient"
 
 val repositoryModule = module {
+    single<LocalDataWiper> { MyKittaDatabaseWiper(database = get()) }
     single<AuthRepository> {
-        DefaultAuthRepository(api = get(), tokenStore = get(), sessionStore = get())
+        DefaultAuthRepository(
+            api = get(),
+            tokenStore = get(),
+            sessionStore = get(),
+            countryStore = get(),
+            profileCacheStore = get(),
+            localDataWiper = get(),
+        )
     }
     single<HomeRepository> {
         DefaultHomeRepository(catalogApi = get(), sessionStore = get(), countryStore = get())
@@ -92,6 +116,14 @@ val repositoryModule = module {
         DefaultPrincipalRepository(
             catalogApi = get(),
             database = get(),
+            sessionStore = get(),
+            countryStore = get(),
+        )
+    }
+    single<ProfileRepository> {
+        DefaultProfileRepository(
+            catalogApi = get(),
+            cacheStore = get(),
             sessionStore = get(),
             countryStore = get(),
         )
@@ -132,6 +164,16 @@ val featurePrincipalModule = module {
     viewModelOf(::PrincipalViewModel)
 }
 
+val featureProfileModule = module {
+    factory {
+        ProfileStoreFactory(
+            storeFactory = get(),
+            profileRepository = get(),
+        )
+    }
+    viewModelOf(::ProfileViewModel)
+}
+
 val featureSplashModule = module {
     factory {
         // Warm-up runs the cheapest possible query against the empty Meta table
@@ -159,6 +201,7 @@ fun commonModules(): List<Module> = listOf(
     featureAuthModule,
     featureHomeModule,
     featurePrincipalModule,
+    featureProfileModule,
     featureSplashModule,
 )
 

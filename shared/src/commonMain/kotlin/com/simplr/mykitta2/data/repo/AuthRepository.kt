@@ -6,11 +6,14 @@ import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.net.api.AuthApi
 import com.simplr.mykitta2.data.net.dto.LoginOtpRequest
 import com.simplr.mykitta2.data.net.dto.VerifyLoginOtpRequest
+import com.simplr.mykitta2.data.prefs.CountryStore
+import com.simplr.mykitta2.data.prefs.ProfileCacheStore
 import com.simplr.mykitta2.data.prefs.SessionStore
 import com.simplr.mykitta2.data.prefs.TokenPair
 import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.domain.Country
 import com.simplr.mykitta2.domain.Session
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 
@@ -30,12 +33,23 @@ interface AuthRepository {
      * onward. The Ktor `Auth` plugin reads the token on every subsequent call.
      */
     suspend fun verifyLoginOtp(userIdDigits: String, otp: String, country: Country): Outcome<Session>
+
+    /**
+     * Tears down the local session: wipes every SQLDelight table, clears the
+     * bearer token, the user profile, and the cached country. Tokens are
+     * cleared first so a mid-cleanup failure still de-authenticates the client.
+     * Caller is responsible for navigating back to the login graph.
+     */
+    suspend fun logout(): Outcome<Unit>
 }
 
 class DefaultAuthRepository(
     private val api: AuthApi,
     private val tokenStore: TokenStore,
     private val sessionStore: SessionStore,
+    private val countryStore: CountryStore,
+    private val profileCacheStore: ProfileCacheStore,
+    private val localDataWiper: LocalDataWiper,
 ) : AuthRepository {
     override suspend fun loginOtp(userIdDigits: String, country: Country): Outcome<Unit> = try {
         api.loginOtp(
@@ -74,6 +88,22 @@ class DefaultAuthRepository(
         )
         sessionStore.write(session)
         Outcome.Success(session)
+    } catch (t: Throwable) {
+        Outcome.Failure(ErrorMapper.from(t))
+    }
+
+    override suspend fun logout(): Outcome<Unit> = try {
+        // Clear tokens first: even if a later step throws, the client is already
+        // de-authenticated and the Ktor Auth plugin will treat the next call as
+        // anonymous (which the login graph requires).
+        tokenStore.clear()
+        sessionStore.clear()
+        countryStore.clear()
+        profileCacheStore.clear()
+        localDataWiper.wipeAll()
+        Outcome.Success(Unit)
+    } catch (c: CancellationException) {
+        throw c
     } catch (t: Throwable) {
         Outcome.Failure(ErrorMapper.from(t))
     }

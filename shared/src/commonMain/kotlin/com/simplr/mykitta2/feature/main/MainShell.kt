@@ -44,6 +44,8 @@ import com.simplr.mykitta2.ui.nav.MainTab
 @Composable
 fun MainShell(
     onOpenSearch: () -> Unit = {},
+    onOpenProfileDetail: () -> Unit = {},
+    onLogout: () -> Unit = {},
 ) {
     val tabNavController = rememberNavController()
     val currentDest = tabNavController.currentBackStackEntryAsState().value?.destination
@@ -89,7 +91,16 @@ fun MainShell(
             }
             composable<MainTab.Rewards> { TabStub("Rewards") }
             composable<MainTab.Profile> {
-                ProfileScreen()
+                ProfileScreen(
+                    onMenuClick = { id ->
+                        // Only "profile" has a destination wired today; the
+                        // rest of the menu rows (stores, shipment, history,
+                        // principal, faq, tutorial, about) remain stubs until
+                        // their feature surfaces land.
+                        if (id == "profile") onOpenProfileDetail()
+                    },
+                    onLogout = onLogout,
+                )
             }
         }
     }

@@ -208,6 +208,11 @@ kotlin {
             implementation(libs.koin.test)
             implementation(libs.multiplatformSettings.test)
         }
+        // Android host (JVM) tests use the JVM SQLite driver so logout / DB
+        // wipe paths can be exercised against a real in-memory schema.
+        getByName("androidHostTest").dependencies {
+            implementation(libs.sqldelight.driver.sqlite)
+        }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.sqldelight.driver.native)

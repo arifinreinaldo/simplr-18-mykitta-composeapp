@@ -42,7 +42,7 @@ fun SearchScreen(onBack: () -> Unit = {}) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = { Text("search item here") },
+                        placeholder = { Text("Search Item Here") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         modifier = Modifier
