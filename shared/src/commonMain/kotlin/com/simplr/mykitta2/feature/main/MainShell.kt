@@ -30,6 +30,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.simplr.mykitta2.feature.history.HistoryScreen
 import com.simplr.mykitta2.feature.home.HomeScreen
 import com.simplr.mykitta2.feature.home.HomeStore
 import com.simplr.mykitta2.feature.home.HomeViewModel
@@ -143,17 +144,21 @@ fun MainShell(
             composable<MainTab.Profile> {
                 ProfileScreen(
                     onMenuClick = { id ->
-                        // "profile" routes to the detail screen; "about" opens
-                        // the project intro video. The rest (stores, shipment,
-                        // history, principal, faq, tutorial) remain stubs until
-                        // their feature surfaces land.
+                        // "profile" routes to the detail screen, "history" pushes
+                        // the History tab, "about" opens the project intro video.
+                        // Remaining ids (stores, shipment, principal, faq,
+                        // tutorial) stay stubs until their feature surfaces land.
                         when (id) {
                             "profile" -> onOpenProfileDetail()
+                            "history" -> tabNavController.navigate(MainTab.History)
                             "about" -> uriHandler.openUri("https://www.youtube.com/watch?v=phrPUil2_7E")
                         }
                     },
                     onLogout = onLogout,
                 )
+            }
+            composable<MainTab.History> {
+                HistoryScreen(onBack = { tabNavController.popBackStack() })
             }
         }
     }
@@ -204,7 +209,8 @@ private fun MainBottomBar(
             label = { Text("Home") },
         )
         NavigationBarItem(
-            selected = currentDest?.hasRoute<MainTab.Principal>() == true,
+            selected = currentDest?.hasRoute<MainTab.Principal>() == true ||
+                currentDest?.hasRoute<MainTab.PrincipalCatalog>() == true,
             onClick = { navController.switchTab(MainTab.Principal) },
             icon = { Text("🏷️", fontSize = 18.sp) },
             label = { Text("Principal") },
@@ -216,7 +222,8 @@ private fun MainBottomBar(
             label = { Text("Rewards") },
         )
         NavigationBarItem(
-            selected = currentDest?.hasRoute<MainTab.Profile>() == true,
+            selected = currentDest?.hasRoute<MainTab.Profile>() == true ||
+                currentDest?.hasRoute<MainTab.History>() == true,
             onClick = { navController.switchTab(MainTab.Profile) },
             icon = { Text("👤", fontSize = 18.sp) },
             label = { Text("My Profile") },

@@ -83,4 +83,26 @@ class MyKittaDatabaseWiperTest {
         assertEquals(emptyList(), db.principalQueries.selectAll().executeAsList())
         assertEquals(emptyList(), db.notificationQueries.selectFirstPage(20).executeAsList())
     }
+
+    @Test fun wipeAll_emptiesHistoryTable() = runTest {
+        val db = freshDb()
+        db.historyQueries.upsert(
+            invNo = "INV-1",
+            invDate = "2026-05-20",
+            status = "Waiting",
+            principalName = "COLUMBIA",
+            total = 1.0,
+            currency = "PHP",
+            itemCount = 1,
+            firstProductName = "",
+            firstProductImageUrl = "",
+            firstProductQty = 0,
+            fetchedAt = 0,
+        )
+        assertTrue(db.historyQueries.countByStatus("Waiting").executeAsOne() > 0)
+
+        MyKittaDatabaseWiper(db).wipeAll()
+
+        assertEquals(0L, db.historyQueries.countByStatus("Waiting").executeAsOne())
+    }
 }

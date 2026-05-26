@@ -56,10 +56,13 @@ class HistoryRepositoryTest {
 
     private fun pageBody(invNos: List<String>, status: String, hasMore: Int = 0): String {
         val rows = invNos.joinToString(",") { no ->
-            """{"InvNo":"$no","InvDate":"2026-05-20","InvStatus":"$status","CustName":"Outlet $no","Total":100.0,"Currency":"PHP","ItemCount":1}"""
+            """{"invNo":"$no","invDt":"2026-05-20","invStatus":"$status","PrincipalName":"COLUMBIA","principalId":"10","total":"100.0","isCancel":false}"""
+        }
+        val details = invNos.joinToString(",") { no ->
+            """{"invNo":"$no","line":1,"qty":1,"productId":"848","productDesc":"AMERICAN GUMBALL","productUrl":"https://x/img.png"}"""
         }
         return """
-            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":$hasMore,"objectData":[[$rows],[]]}}
+            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":$hasMore,"objectData":[[$rows],[$details]]}}
         """.trimIndent()
     }
 
@@ -206,5 +209,142 @@ class HistoryRepositoryTest {
         r.refresh(OrderStatus.WAITING)
 
         assertEquals(2, callCount())
+    }
+
+    // --- loadMore -----------------------------------------------------------
+
+    @Test fun loadMore_appendsWithoutWipingPriorPage() = runTest {
+        val responses = ArrayDeque(listOf(
+            pageBody(listOf("INV-1", "INV-2"), "Waiting", hasMore = 1),
+            pageBody(listOf("INV-3", "INV-4"), "Waiting", hasMore = 0),
+        ))
+        val (client, _) = mockClient {
+            respond(content = responses.removeFirst(),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+        val before = r.observe(OrderStatus.WAITING).first()
+        assertEquals(2, before.size)
+
+        val outcome = r.loadMore(OrderStatus.WAITING, currentCount = before.size)
+        assertIs<Outcome.Success<HasMore>>(outcome)
+        assertEquals(false, outcome.value.hasMore)
+
+        val after = r.observe(OrderStatus.WAITING).first()
+        assertEquals(4, after.size)
+        assertTrue(after.map { it.invNo }.containsAll(listOf("INV-1", "INV-2", "INV-3", "INV-4")))
+    }
+
+    @Test fun loadMore_sendsCorrectOffsetInRequest() = runTest {
+        val sentBodies = mutableListOf<String>()
+        val client = HttpClient(MockEngine { req ->
+            sentBodies += (req.body as TextContent).text
+            respond(content = pageBody(listOf("INV-X"), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }) {
+            expectSuccess = true
+            install(ContentNegotiation) { json() }
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)              // offset=0
+        r.loadMore(OrderStatus.WAITING, currentCount = 1) // offset=1
+
+        assertEquals(2, sentBodies.size)
+        assertTrue(sentBodies[0].contains("\"offset\":0"), "first call must be offset=0")
+        assertTrue(sentBodies[1].contains("\"offset\":1"), "second call must use currentCount")
+    }
+
+    // --- Defensive filters --------------------------------------------------
+
+    @Test fun unknownStatus_isDroppedFromCache() = runTest {
+        val mixedBody = """
+            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[
+              {"invNo":"INV-OK","invDt":"2026-05-20","invStatus":"Waiting","PrincipalName":"COLUMBIA","total":"1.0","isCancel":false},
+              {"invNo":"INV-X","invDt":"2026-05-20","invStatus":"Refunded","PrincipalName":"COLUMBIA","total":"1.0","isCancel":false}
+            ],[]]}}
+        """.trimIndent()
+        val (client, _) = mockClient {
+            respond(content = mixedBody, status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+
+        val rows = r.observe(OrderStatus.WAITING).first()
+        assertEquals(1, rows.size, "Refunded must be filtered out")
+        assertEquals("INV-OK", rows[0].invNo)
+    }
+
+    @Test fun mismatchedStatusRow_isDroppedFromCache() = runTest {
+        // Backend bug guard: if the server returns a Finished row in response
+        // to a WAITING query, we drop it rather than letting it pollute the
+        // WAITING tab's cache.
+        val mixedBody = """
+            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[
+              {"invNo":"INV-1","invDt":"2026-05-20","invStatus":"Finished","PrincipalName":"COLUMBIA","total":"1.0","isCancel":false}
+            ],[]]}}
+        """.trimIndent()
+        val (client, _) = mockClient {
+            respond(content = mixedBody, status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+
+        val rows = r.observe(OrderStatus.WAITING).first()
+        assertEquals(0, rows.size)
+    }
+
+    // --- Failure mapping ----------------------------------------------------
+
+    @Test fun networkFailure_returnsAppErrorHttp() = runTest {
+        val client = HttpClient(MockEngine { respondError(HttpStatusCode.InternalServerError) }) {
+            expectSuccess = true
+            install(ContentNegotiation) { json() }
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        val outcome = r.refresh(OrderStatus.WAITING)
+
+        assertIs<Outcome.Failure>(outcome)
+        assertIs<AppError.Http>(outcome.error)
+        assertEquals(500, (outcome.error as AppError.Http).status)
+    }
+
+    // --- Request shape ------------------------------------------------------
+
+    @Test fun request_usesSupervisorAndGetHistory() = runTest {
+        val sent = mutableListOf<String>()
+        val client = HttpClient(MockEngine { req ->
+            sent += (req.body as TextContent).text
+            respond(content = pageBody(emptyList(), "Waiting"),
+                    status = HttpStatusCode.OK, headers = jsonHeaders)
+        }) {
+            expectSuccess = true
+            install(ContentNegotiation) { json() }
+        }
+        val (r, sessionStore, countryStore) = repo(client)
+        sessionStore.write(Session(userName = "u", supervisorCode = "S-7", isSupervisor = true))
+        countryStore.write(Country.PH)
+
+        r.refresh(OrderStatus.WAITING)
+
+        val body = sent.single()
+        assertTrue(body.contains("\"functionName\":\"GetHistory\""), "wrong functionName: $body")
+        assertTrue(body.contains("\"user\":\"S-7\""), "supervisorCode not propagated: $body")
+        assertTrue(body.contains("\"search\":\"status=Waiting\""), "wrong status filter: $body")
     }
 }

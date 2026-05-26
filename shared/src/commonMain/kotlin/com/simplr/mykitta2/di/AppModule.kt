@@ -23,10 +23,12 @@ import com.simplr.mykitta2.data.prefs.ThemeStore
 import com.simplr.mykitta2.data.prefs.TokenStore
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
+import com.simplr.mykitta2.data.repo.DefaultHistoryRepository
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
 import com.simplr.mykitta2.data.repo.DefaultNotificationRepository
 import com.simplr.mykitta2.data.repo.DefaultPrincipalRepository
 import com.simplr.mykitta2.data.repo.DefaultProfileRepository
+import com.simplr.mykitta2.data.repo.HistoryRepository
 import com.simplr.mykitta2.data.repo.HomeRepository
 import com.simplr.mykitta2.data.repo.LocalDataWiper
 import com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper
@@ -38,6 +40,8 @@ import com.simplr.mykitta2.feature.auth.LoginOtpViewModel
 import com.simplr.mykitta2.feature.auth.OtpVerifyArgs
 import com.simplr.mykitta2.feature.auth.OtpVerifyStoreFactory
 import com.simplr.mykitta2.feature.auth.OtpVerifyViewModel
+import com.simplr.mykitta2.feature.history.HistoryStoreFactory
+import com.simplr.mykitta2.feature.history.HistoryViewModel
 import com.simplr.mykitta2.feature.home.HomeStoreFactory
 import com.simplr.mykitta2.feature.home.HomeViewModel
 import com.simplr.mykitta2.feature.notification.NotificationStoreFactory
@@ -141,6 +145,14 @@ val repositoryModule = module {
             countryStore = get(),
         )
     }
+    single<HistoryRepository> {
+        DefaultHistoryRepository(
+            catalogApi = get(),
+            database = get(),
+            sessionStore = get(),
+            countryStore = get(),
+        )
+    }
 }
 
 val featureAuthModule = module {
@@ -193,6 +205,11 @@ val featureProfileModule = module {
     viewModelOf(::ProfileViewModel)
 }
 
+val featureHistoryModule = module {
+    factory { HistoryStoreFactory(storeFactory = get(), repository = get()) }
+    viewModelOf(::HistoryViewModel)
+}
+
 val featureNotificationModule = module {
     // PendingNavStore is process-scoped state for cross-NavController deep-links
     // (e.g. NotificationScreen → MainShell's PrincipalCatalog tab). Lives here
@@ -238,6 +255,7 @@ fun commonModules(): List<Module> = listOf(
     featureHomeModule,
     featurePrincipalModule,
     featureProfileModule,
+    featureHistoryModule,
     featureNotificationModule,
     featureSplashModule,
 )

@@ -11,9 +11,9 @@ class HistoryDtosTest {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = false }
 
-    /** Verbatim shape of `User/GetObject` with `functionName=GetHistory`.
-     *  Headers in `objectData[0]` (we use these); details in `objectData[1]`
-     *  (a different schema entirely — we don't decode them in this slice). */
+    /** Verbatim sample from live PH backend (May 2026). Numeric fields arrive
+     *  as JSON strings; row schema is lowercase except `PrincipalName`. The
+     *  `itemCount` per invoice comes from `objectData[1]`, not the header. */
     private val historyResponseBody = """
         {
           "getObjectResult": {
@@ -21,66 +21,80 @@ class HistoryDtosTest {
             "hasMoreRecords": 1,
             "objectData": [
               [
-                {"InvNo":"INV-001","InvDate":"2026-05-20","InvStatus":"Waiting","CustName":"Outlet A","Total":1200.50,"Currency":"PHP","ItemCount":3,"IsCancel":false},
-                {"InvNo":"INV-002","InvDate":"2026-05-19","InvStatus":"Finished","CustName":"Outlet B","Total":750.00,"Currency":"PHP","ItemCount":1}
+                {"isCancel":false,"invNo":"INV/10/240502/000001","invDt":"2024-05-02","principalId":"10","PrincipalName":"COLUMBIA","subTotal":"23.7","discount":"0","gst":"2.53","total":"23.7","paid":0,"shipAdd":"Default","shipCity":"Makati","shipZip":"200","invStatus":"Waiting","CustId":"9995045287"},
+                {"isCancel":false,"invNo":"INV/35/251010/000001","invDt":"2025-10-10","principalId":"35","PrincipalName":"SELECTA","subTotal":"784","discount":"0","gst":"84","total":"784","paid":0,"shipAdd":"Default","shipCity":"Makati","shipZip":"200","invStatus":"Waiting","CustId":"9995045287"}
               ],
               [
-                {"InvNo":"INV-001","Line":1,"ProductId":"P-100","Qty":2,"LinePrice":600.25},
-                {"InvNo":"INV-001","Line":2,"ProductId":"P-101","Qty":1,"LinePrice":600.00}
+                {"invNo":"INV/10/240502/000001","line":1,"qty":1,"productId":"848","productDesc":"AMERICAN GUMBALL","productUrl":"https://x/g.png"},
+                {"invNo":"INV/35/251010/000001","line":2,"qty":8,"productId":"P-B","productDesc":"P10 ICE POP","productUrl":"https://x/b.png"},
+                {"invNo":"INV/35/251010/000001","line":1,"qty":3,"productId":"P-A","productDesc":"P10 CHOCKY STICK","productUrl":"https://x/a.png"}
               ]
             ]
           }
         }
     """.trimIndent()
 
-    @Test fun decodesEnvelopeAndPicksHeaderRows() {
+    @Test fun decodesEnvelopeAndJoinsHeaderRowsWithItemCounts() {
         val response = json.decodeFromString(HistoryServerResponse.serializer(), historyResponseBody)
-        val headers = response.headers()
-        assertEquals(2, headers.size)
-        assertEquals("INV-001", headers[0].invNo)
-        assertEquals("Waiting", headers[0].invStatus)
-        assertEquals(1200.50, headers[0].total)
-        assertEquals("PHP", headers[0].currency)
-        assertEquals(3, headers[0].itemCount)
-        assertEquals(false, headers[0].isCancel)
-        // Missing IsCancel defaults to false (DTO default).
-        assertEquals(false, headers[1].isCancel)
+        val rows = response.rows(currency = "PHP")
+        assertEquals(2, rows.size)
+        assertEquals("INV/10/240502/000001", rows[0].invNo)
+        assertEquals("2024-05-02", rows[0].invDate)
+        assertEquals(OrderStatus.WAITING, rows[0].status)
+        assertEquals("COLUMBIA", rows[0].principalName)
+        assertEquals(23.7, rows[0].total)
+        assertEquals("PHP", rows[0].currency)
+        assertEquals(1, rows[0].itemCount)
+        // SELECTA invoice has two detail lines -> itemCount == 2.
+        assertEquals(2, rows[1].itemCount)
+        assertEquals("SELECTA", rows[1].principalName)
+
+        // First-line preview: COLUMBIA's only line.
+        assertEquals("AMERICAN GUMBALL", rows[0].firstProduct?.name)
+        assertEquals(1, rows[0].firstProduct?.qty)
+        // SELECTA's two detail rows arrive out of order; the lowest `line` wins.
+        assertEquals("P10 CHOCKY STICK", rows[1].firstProduct?.name)
+        assertEquals(3, rows[1].firstProduct?.qty)
+    }
+
+    @Test fun hasMoreParsesOneAsTrueAndZeroAsFalse() {
+        val response = json.decodeFromString(HistoryServerResponse.serializer(), historyResponseBody)
+        assertEquals(true, response.hasMore())
     }
 
     @Test fun toDomainDropsUnknownStatuses() {
         val dto = HistoryDto(
             invNo = "INV-X",
-            invDate = "2026-05-20",
+            invDt = "2026-05-20",
             invStatus = "Refunded",   // not in OrderStatus
-            custName = "Outlet C",
-            total = 99.0,
-            currency = "PHP",
-            itemCount = 1,
+            principalName = "COLUMBIA",
+            totalText = "99.0",
         )
-        assertNull(dto.toDomain())
+        assertNull(dto.toDomain(currency = "PHP", itemCount = 1, firstProduct = null))
     }
 
-    @Test fun toDomainMapsKnownStatus() {
+    @Test fun toDomainMapsKnownStatusAndParsesAmount() {
         val dto = HistoryDto(
             invNo = "INV-1",
-            invDate = "2026-05-20",
+            invDt = "2026-05-20",
             invStatus = "Waiting",
-            custName = "Outlet A",
-            total = 100.0,
-            currency = "PHP",
-            itemCount = 2,
+            principalName = "SELECTA",
+            totalText = "784",
         )
-        val order = dto.toDomain()
+        val order = dto.toDomain(currency = "PHP", itemCount = 2, firstProduct = null)
         assertNotNull(order)
         assertEquals(OrderStatus.WAITING, order.status)
         assertEquals("INV-1", order.invNo)
+        assertEquals(784.0, order.total)
+        assertEquals(2, order.itemCount)
+        assertEquals("SELECTA", order.principalName)
     }
 
-    @Test fun headersOnEmptyResponseIsEmpty() {
+    @Test fun rowsOnEmptyResponseIsEmpty() {
         val empty = """
-            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[]}}
+            {"getObjectResult":{"errorData":{"code":0,"description":""},"hasMoreRecords":0,"objectData":[[],[]]}}
         """.trimIndent()
         val response = json.decodeFromString(HistoryServerResponse.serializer(), empty)
-        assertEquals(emptyList(), response.headers())
+        assertEquals(emptyList(), response.rows(currency = "PHP"))
     }
 }

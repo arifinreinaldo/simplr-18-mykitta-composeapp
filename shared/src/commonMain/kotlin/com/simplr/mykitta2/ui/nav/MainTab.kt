@@ -22,6 +22,7 @@ sealed interface MainTab {
     @Serializable data object Principal : MainTab
     @Serializable data object Rewards : MainTab
     @Serializable data object Profile : MainTab
+    @Serializable data object History : MainTab
 
     /** Catalog scoped to a single principal. Lives on the tab NavController so
      *  back from the catalog returns to the Principal grid; switching tabs

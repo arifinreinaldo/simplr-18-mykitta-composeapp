@@ -81,8 +81,8 @@ shared/src/commonMain/kotlin/com/simplr/mykitta2/
     net/dto/  Serializable request/response DTOs
     net/api/  AuthApi, CatalogApi + Ktor implementations
     db/       SqlDriverFactory (expect), DatabaseFactory
-    prefs/    SettingsFactory (expect), TokenStore, SessionStore, CountryStore, ThemeStore
-    repo/     AuthRepository, HomeRepository, PrincipalRepository, LocalDataWiper
+    prefs/    SettingsFactory (expect), TokenStore, SessionStore, CountryStore, ThemeStore, ProfileCacheStore
+    repo/     AuthRepository, HomeRepository, PrincipalRepository, ProfileRepository, LocalDataWiper
   domain/     Pure Kotlin model types (Country, Session, Banner, Item, Principal, ThemeMode, …)
   di/         AppModule — every Koin module, plus `commonModules()` + `expect platformModule`
   feature/    auth/ home/ principal/ profile/ search/ splash/ main/ — MVI store + screen per feature
@@ -107,7 +107,7 @@ Store factories with per-screen args (e.g. `OtpVerifyStoreFactory(args = OtpVeri
 
 Two NavControllers, one nested:
 
-- **Top-level NavHost** (`AppNavHost`) is sibling to the splash. Routes: `LoginOtp`, `OtpVerify`, `Home` (= `MainShell`), `Search`, `SignedIn` (legacy, retained for tests).
+- **Top-level NavHost** (`AppNavHost`) is sibling to the splash. Routes: `LoginOtp`, `OtpVerify`, `Home` (= `MainShell`), `Search`, `ProfileDetail`, `SignedIn` (legacy, retained for tests). `ProfileDetail` lives at the top level (not as a tab) so it pushes a full-screen surface over the bottom-nav shell; the Profile tab invokes `onOpenProfileDetail` to navigate up to it.
 - **Splash** sits outside `AppNavHost` and resolves a `SplashStore.Destination` (Home or Login) — `App.kt` keeps the resolved destination in `rememberSaveable` so a config change doesn't replay the splash animation. Splash is unreachable via back-button by construction.
 - **MainShell** owns its own NavController for the bottom-nav tabs (`MainTab.Home / Principal / Rewards / Profile`, plus the nested `PrincipalCatalog`). Tab switches use `popUpTo(graph.startDestination) { saveState = true } + launchSingleTop + restoreState` so each tab keeps its back-stack and scroll state.
 - **Search** is a top-level destination (not a tab) and reads `onOpenSearch` from `MainShell` via callback.
@@ -122,7 +122,8 @@ Repositories return `Outcome<T>` (`Idle | Loading | Success | Failure(AppError)`
 ### Persistence
 
 - **SQLDelight 2.x** for relational storage. Schema lives in `shared/src/commonMain/sqldelight/com/simplr/mykitta2/shared/db/*.sq`; package `com.simplr.mykitta2.shared.db`. Today: `Schema.sq` (Meta startup-warmup table) and `Principal.sq`. Features add their own `.sq` files. The Room schema from the legacy app is **not** migrated.
-- **Multiplatform Settings** for key-value, with two flavors via `SettingsFactory`: `secureSettings(name)` (EncryptedSharedPreferences on Android, Keychain on iOS) for tokens, and `plainSettings(name)` (SharedPreferences / NSUserDefaults) for prefs. `TokenStore` uses secure; `SessionStore`, `CountryStore`, `ThemeStore` use plain.
+- **Multiplatform Settings** for key-value, with two flavors via `SettingsFactory`: `secureSettings(name)` (EncryptedSharedPreferences on Android, Keychain on iOS) for tokens, and `plainSettings(name)` (SharedPreferences / NSUserDefaults) for prefs. `TokenStore` uses secure; `SessionStore`, `CountryStore`, `ThemeStore`, `ProfileCacheStore` use plain.
+- **Per-feature read-through caches** live next to the prefs stores (`ProfileCacheStore` is the canonical example: JSON-serialized payload + fetched-at timestamp, default 24h TTL exposed as `ProfileCacheStore.DEFAULT_TTL`). The repository — not the store — decides freshness (`loadProfile(ttl = …)`) and is the only place that calls the network. Treat these caches as user-scoped: register them in `LocalDataWiper` so logout drops them.
 - **`LocalDataWiper.wipeAll()`** — `AuthRepository.logout()` clears tokens, session, country, and every user-scoped SQLDelight table through this interface. Add a new `deleteAll()` call inside `MyKittaDatabaseWiper` when a new `.sq` table lands; logout will then stay correct without further surgery. Wrap multi-table wipes in a transaction.
 
 ### Networking
@@ -168,6 +169,7 @@ Repositories return `Outcome<T>` (`Idle | Loading | Success | Failure(AppError)`
 - **`flavorDimensions = ["env"]`** with `dev`/`staging`/`prod`. Don't add a second dimension without a real reason.
 - **`google-services.json` is conditional.** `androidApp/build.gradle.kts` only applies the Google Services + Crashlytics plugins if a `google-services.json` exists somewhere under `androidApp/` or `androidApp/src/<flavor>/`. Builds succeed without one; Crashlytics just doesn't initialize.
 - **Tab switches use the saved-state options bundle**, not raw `navigate(tab)`. Copy the helper in `MainShell.switchTab` rather than reinventing it — the `saveState`/`restoreState` pair is what keeps each tab's scroll position and back-stack.
+- **External URLs go through `LocalUriHandler.current.openUri(…)`**, not a custom in-app browser. The About menu in `MainShell.kt` opens a hard-coded YouTube link this way — keep that pattern for any "open in browser / partner site" actions.
 
 ## Useful pointers
 

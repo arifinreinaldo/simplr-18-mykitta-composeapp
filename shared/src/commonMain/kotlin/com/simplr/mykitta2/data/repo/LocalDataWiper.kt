@@ -25,6 +25,7 @@ class MyKittaDatabaseWiper(
         database.principalQueries.transaction {
             database.principalQueries.deleteAll()
             database.notificationQueries.deleteAll()
+            database.historyQueries.deleteAll()
         }
     }
 }

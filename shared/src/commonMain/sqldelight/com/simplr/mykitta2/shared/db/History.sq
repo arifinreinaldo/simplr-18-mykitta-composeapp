@@ -8,10 +8,13 @@ CREATE TABLE IF NOT EXISTS History (
     invNo TEXT NOT NULL PRIMARY KEY,
     invDate TEXT NOT NULL,
     status TEXT NOT NULL,
-    custName TEXT NOT NULL,
+    principalName TEXT NOT NULL,
     total REAL NOT NULL,
     currency TEXT NOT NULL,
     itemCount INTEGER NOT NULL,
+    firstProductName TEXT NOT NULL DEFAULT '',
+    firstProductImageUrl TEXT NOT NULL DEFAULT '',
+    firstProductQty INTEGER NOT NULL DEFAULT 0,
     fetchedAt INTEGER NOT NULL
 );
 
@@ -27,8 +30,8 @@ oldestFetchedAtByStatus:
 SELECT MIN(fetchedAt) FROM History WHERE status = :status;
 
 upsert:
-INSERT OR REPLACE INTO History(invNo, invDate, status, custName, total, currency, itemCount, fetchedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO History(invNo, invDate, status, principalName, total, currency, itemCount, firstProductName, firstProductImageUrl, firstProductQty, fetchedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteByStatus:
 DELETE FROM History WHERE status = :status;

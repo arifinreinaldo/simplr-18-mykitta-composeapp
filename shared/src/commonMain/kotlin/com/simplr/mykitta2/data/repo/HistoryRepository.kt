@@ -7,7 +7,6 @@ import com.simplr.mykitta2.core.error.ErrorMapper
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.net.api.CatalogApi
 import com.simplr.mykitta2.data.net.dto.GetRequest
-import com.simplr.mykitta2.data.net.dto.HistoryDto
 import com.simplr.mykitta2.data.prefs.CountryStore
 import com.simplr.mykitta2.data.prefs.SessionStore
 import com.simplr.mykitta2.domain.Country
@@ -90,11 +89,12 @@ class DefaultHistoryRepository(
             // is the only way to learn whether more rows exist on the server.
             return@catching HasMore(hasMore = true)
         }
+        val country = countryStore.read() ?: Country.PH
         val response = catalogApi.getHistory(
-            baseUrl = baseUrl(),
+            baseUrl = BuildEnv.baseUrlFor(country),
             request = historyRequest(status, offset = 0),
         )
-        val rows = response.headers()
+        val rows = response.rows(currency = currencyFor(country))
         database.historyQueries.transaction {
             database.historyQueries.deleteByStatus(status.wire)
             insertAll(rows, status, now())
@@ -106,11 +106,12 @@ class DefaultHistoryRepository(
         status: OrderStatus,
         currentCount: Int,
     ): Outcome<HasMore> = catching {
+        val country = countryStore.read() ?: Country.PH
         val response = catalogApi.getHistory(
-            baseUrl = baseUrl(),
+            baseUrl = BuildEnv.baseUrlFor(country),
             request = historyRequest(status, offset = currentCount),
         )
-        val rows = response.headers()
+        val rows = response.rows(currency = currencyFor(country))
         database.historyQueries.transaction {
             insertAll(rows, status, now())
         }
@@ -139,12 +140,8 @@ class DefaultHistoryRepository(
         return ageMillis <= ttl.inWholeMilliseconds
     }
 
-    private fun insertAll(rows: List<HistoryDto>, status: OrderStatus, stamp: Long) {
-        rows.forEach { dto ->
-            // Filter at write time — rows with unknown statuses never enter the
-            // cache. observe() applies the same filter at read time as a
-            // belt-and-braces guard.
-            val domain = dto.toDomain() ?: return@forEach
+    private fun insertAll(rows: List<Order>, status: OrderStatus, stamp: Long) {
+        rows.forEach { domain ->
             // Defensive: backend should already filter by the requested status,
             // but drop any row that doesn't match the tab we fetched for.
             if (domain.status != status) return@forEach
@@ -152,17 +149,22 @@ class DefaultHistoryRepository(
                 invNo = domain.invNo,
                 invDate = domain.invDate,
                 status = status.wire,
-                custName = domain.custName,
+                principalName = domain.principalName,
                 total = domain.total,
                 currency = domain.currency,
                 itemCount = domain.itemCount.toLong(),
+                firstProductName = domain.firstProduct?.name ?: "",
+                firstProductImageUrl = domain.firstProduct?.imageUrl ?: "",
+                firstProductQty = (domain.firstProduct?.qty ?: 0).toLong(),
                 fetchedAt = stamp,
             )
         }
     }
 
-    private suspend fun baseUrl(): String =
-        BuildEnv.baseUrlFor(countryStore.read() ?: Country.PH)
+    private fun currencyFor(country: Country): String = when (country) {
+        Country.PH -> "PHP"
+        Country.SG -> "SGD"
+    }
 
     private suspend fun historyRequest(status: OrderStatus, offset: Int) = GetRequest(
         functionName = "GetHistory",
@@ -177,14 +179,22 @@ class DefaultHistoryRepository(
 
     private fun HistoryRow.toDomain(): Order? {
         val parsed = OrderStatus.fromWire(status) ?: return null
+        val preview = if (firstProductName.isNotEmpty()) {
+            com.simplr.mykitta2.domain.OrderItemPreview(
+                name = firstProductName,
+                imageUrl = firstProductImageUrl,
+                qty = firstProductQty.toInt(),
+            )
+        } else null
         return Order(
             invNo = invNo,
             invDate = invDate,
             status = parsed,
-            custName = custName,
+            principalName = principalName,
             total = total,
             currency = currency,
             itemCount = itemCount.toInt(),
+            firstProduct = preview,
         )
     }
 }

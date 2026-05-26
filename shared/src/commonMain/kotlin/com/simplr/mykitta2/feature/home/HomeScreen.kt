@@ -20,8 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -57,6 +55,7 @@ import coil3.compose.AsyncImage
 import com.simplr.mykitta2.domain.Banner
 import com.simplr.mykitta2.domain.CategoryRail
 import com.simplr.mykitta2.domain.Item
+import com.simplr.mykitta2.ui.common.BadgedIconButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
@@ -101,15 +100,13 @@ fun HomeScreen(
                 actions = {
                     // material-icons-extended isn't in the deps yet — use plain text
                     // glyphs so this slice stays in the existing dep graph.
-                    BadgedBox(
-                        badge = {
-                            if (state.notifCount > 0) Badge { Text(state.notifCount.toString()) }
-                        }
-                    ) {
-                        IconButton(onClick = onOpenNotifications) { Text("🔔", fontSize = 20.sp) }
-                    }
-                    IconButton(onClick = onOpenCart) { Text("🛒", fontSize = 20.sp) }
-                    IconButton(onClick = onOpenChat) { Text("💬", fontSize = 20.sp) }
+                    BadgedIconButton(
+                        glyph = "🔔",
+                        onClick = onOpenNotifications,
+                        badgeCount = state.notifCount,
+                    )
+                    BadgedIconButton(glyph = "🛒", onClick = onOpenCart)
+                    BadgedIconButton(glyph = "💬", onClick = onOpenChat)
                 },
             )
         },
