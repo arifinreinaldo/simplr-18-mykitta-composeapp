@@ -1,0 +1,28 @@
+-- User-scoped notification cache. Refreshed from `GetNotificationData` on
+-- screen open (offset=0 only — deeper pages aren't reachable offline).
+-- Wiped on logout via [com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper].
+CREATE TABLE IF NOT EXISTS Notification (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    isRead INTEGER NOT NULL,
+    createdAt TEXT NOT NULL
+);
+
+selectFirstPage:
+SELECT * FROM Notification ORDER BY createdAt DESC LIMIT :pageSize;
+
+countUnread:
+SELECT COUNT(*) FROM Notification WHERE isRead = 0;
+
+upsert:
+INSERT OR REPLACE INTO Notification(id, title, description, type, payload, isRead, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+markRead:
+UPDATE Notification SET isRead = 1 WHERE id = :id;
+
+deleteAll:
+DELETE FROM Notification;
