@@ -4,31 +4,56 @@ import com.simplr.mykitta2.domain.Order
 import com.simplr.mykitta2.domain.OrderStatus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Response shape for `POST User/GetObject` with `functionName=GetHistory`.
  *
- * `objectData` is double-wrapped (`List<List<T>>`); legacy GetHistory is the
- * one endpoint that uses BOTH inner lists — headers at index 0 (what we
- * consume), details at index 1 (ignored in the list-only slice).
+ * The legacy `GetHistory` endpoint is the one read in the catalog that uses
+ * BOTH inner lists of the double-wrapped `objectData`:
+ *   - `objectData[0]` = invoice header rows ([HistoryDto] — what we consume).
+ *   - `objectData[1]` = invoice detail/line rows (different schema; ignored
+ *     in the list-only slice).
+ *
+ * Because the two inner lists have different shapes, we can't reuse the
+ * generic [GetObjectResult] envelope — decoding would fail trying to parse
+ * detail rows as [HistoryDto]. We type the inner lists as raw [JsonArray]
+ * and decode only `objectData[0]` here via [headers].
  *
  * Field names mirror the live backend wire format inferred from
  * `llm_wiki/features/orders.md` + `llm_wiki/deep/repository.md`. **Verify
- * against staging via Chucker before merging** — if names drift, this file is
- * the only one that changes.
+ * against staging via Chucker before merging** — if names drift, only this
+ * file changes.
  */
 @Serializable
 data class HistoryServerResponse(
-    @SerialName("getObjectResult") val getObjectResult: GetObjectResult<HistoryDto>,
+    @SerialName("getObjectResult") val getObjectResult: HistoryEnvelope,
 ) {
-    /** Header rows (the user-visible list). Drops details, which live in
-     *  `objectData[1]` and aren't consumed by this slice. */
-    fun headers(): List<HistoryDto> =
-        getObjectResult.objectData.firstOrNull().orEmpty()
+    /** Header rows (the user-visible list). Skips `objectData[1]` (details)
+     *  which we don't consume in this slice. */
+    fun headers(): List<HistoryDto> {
+        val first = getObjectResult.objectData.firstOrNull() ?: return emptyList()
+        return first.mapNotNull { element ->
+            (element as? JsonObject)?.let { historyJson.decodeFromJsonElement(HistoryDto.serializer(), it) }
+        }
+    }
 
     /** Server's `hasMoreRecords` is `0`/`1`. True when more pages exist. */
     fun hasMore(): Boolean = getObjectResult.hasMoreRecords == 1
 }
+
+@Serializable
+data class HistoryEnvelope(
+    val errorData: ErrorData = ErrorData(),
+    val hasMoreRecords: Int = 0,
+    /** Raw inner lists — index 0 is headers, index 1 is details. Detail rows
+     *  have a different schema; typing this as [JsonArray] lets the envelope
+     *  decode without forcing all rows to fit one DTO shape. */
+    val objectData: List<JsonArray> = emptyList(),
+)
 
 @Serializable
 data class HistoryDto(
@@ -56,4 +81,14 @@ data class HistoryDto(
             itemCount = itemCount,
         )
     }
+}
+
+/**
+ * File-scoped JSON instance used only to lazy-decode the inner `objectData[0]`
+ * array into [HistoryDto]s. Configured to match the codebase's main client
+ * config (see `KtorClientFactory`): unknown keys ignored, lenient mode off.
+ */
+private val historyJson: Json = Json {
+    ignoreUnknownKeys = true
+    isLenient = false
 }

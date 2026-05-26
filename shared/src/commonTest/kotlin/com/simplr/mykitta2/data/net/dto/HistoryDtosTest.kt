@@ -13,7 +13,7 @@ class HistoryDtosTest {
 
     /** Verbatim shape of `User/GetObject` with `functionName=GetHistory`.
      *  Headers in `objectData[0]` (we use these); details in `objectData[1]`
-     *  (we ignore these in the list-only slice). */
+     *  (a different schema entirely — we don't decode them in this slice). */
     private val historyResponseBody = """
         {
           "getObjectResult": {
@@ -25,7 +25,8 @@ class HistoryDtosTest {
                 {"InvNo":"INV-002","InvDate":"2026-05-19","InvStatus":"Finished","CustName":"Outlet B","Total":750.00,"Currency":"PHP","ItemCount":1}
               ],
               [
-                {"InvNo":"INV-001-detail","InvDate":"2026-05-20","InvStatus":"Waiting","CustName":"Outlet A","Total":1200.50,"Currency":"PHP","ItemCount":3,"IsCancel":false}
+                {"InvNo":"INV-001","Line":1,"ProductId":"P-100","Qty":2,"LinePrice":600.25},
+                {"InvNo":"INV-001","Line":2,"ProductId":"P-101","Qty":1,"LinePrice":600.00}
               ]
             ]
           }
