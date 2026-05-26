@@ -5,6 +5,7 @@ import com.arkivanov.mvikotlin.core.store.Store
 import com.arkivanov.mvikotlin.core.store.StoreFactory
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineBootstrapper
 import com.arkivanov.mvikotlin.extensions.coroutines.CoroutineExecutor
+import com.simplr.mykitta2.core.error.AppError
 import com.simplr.mykitta2.core.error.ErrorMapper
 import com.simplr.mykitta2.core.result.Outcome
 import com.simplr.mykitta2.data.repo.NotificationRepository
@@ -46,6 +47,9 @@ class NotificationStoreFactory(
     private val storeFactory: StoreFactory,
     private val notificationRepository: NotificationRepository,
     private val principalRepository: PrincipalRepository,
+    /** Toggles dev-only error surfaces (e.g. mark-read 403 snackbars). Wired
+     *  to [com.simplr.mykitta2.core.env.BuildEnv.isDebug] in Koin. */
+    private val isDebugBuild: Boolean,
 ) {
     fun create(): NotificationStore =
         object : NotificationStore,
@@ -121,9 +125,16 @@ class NotificationStoreFactory(
                         // Optimistic UI: still flip the dot even though the server
                         // didn't confirm. The next refresh will reconcile.
                         dispatch(Message.MarkedRead(notification.id))
-                        publish(NotificationStore.Label.ShowSnackbar(
-                            ErrorMapper.message(markOutcome.error)
-                        ))
+                        // The mark-read endpoint returns 403 in some legacy
+                        // tenant configurations even though the write succeeded
+                        // server-side. Surfacing that to end users in release
+                        // builds is noise — gate behind isDebugBuild so we
+                        // still see it during development.
+                        if (!shouldSuppress(markOutcome.error)) {
+                            publish(NotificationStore.Label.ShowSnackbar(
+                                ErrorMapper.message(markOutcome.error)
+                            ))
+                        }
                     }
                     Outcome.Idle, Outcome.Loading -> Unit
                 }
@@ -157,6 +168,11 @@ class NotificationStoreFactory(
                 }
             }
         }
+
+        /** Hides specific noisy errors from release-build snackbars. Currently
+         *  scoped to mark-read HTTP 403 (a legacy tenant quirk). */
+        private fun shouldSuppress(error: AppError): Boolean =
+            !isDebugBuild && error is AppError.Http && error.status == 403
 
         private fun parsePrincipalId(payload: String): String? = try {
             // Wire key is Pascal-case `PrincipalId` per the live

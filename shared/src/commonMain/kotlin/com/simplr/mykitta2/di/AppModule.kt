@@ -204,6 +204,7 @@ val featureNotificationModule = module {
             storeFactory = get(),
             notificationRepository = get(),
             principalRepository = get(),
+            isDebugBuild = BuildEnv.isDebug,
         )
     }
     viewModelOf(::NotificationViewModel)

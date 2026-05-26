@@ -248,6 +248,57 @@ class NotificationStoreTest {
         assertTrue(store.state.items.first().isRead)
     }
 
+    @Test fun tapItem_markReadFails_with403_inReleaseBuild_suppressesSnackbar() = runTest(dispatcher) {
+        // Legacy tenant quirk: mark-read endpoint can return 403 even when the
+        // write succeeded server-side. Release builds shouldn't pester the
+        // user with that — only the nav label fires.
+        val notif = Notification(
+            id = "N4", title = "T", description = "D",
+            type = NotificationType.ORDER,
+            payload = "{}", isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(
+            pages = mapOf(0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false))),
+            markReadResult = Outcome.Failure(AppError.Http(status = 403, body = null)),
+        )
+        val store = makeStore(repo, isDebugBuild = false)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        // Only the nav label — no snackbar.
+        assertEquals(1, labels.size)
+        assertEquals(NotificationStore.Label.NavigateUnsupportedType, labels.single())
+        // Optimistic mark-read still applies.
+        assertTrue(store.state.items.first().isRead)
+    }
+
+    @Test fun tapItem_markReadFails_with403_inDebugBuild_stillSurfacesSnackbar() = runTest(dispatcher) {
+        val notif = Notification(
+            id = "N5", title = "T", description = "D",
+            type = NotificationType.ORDER,
+            payload = "{}", isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(
+            pages = mapOf(0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false))),
+            markReadResult = Outcome.Failure(AppError.Http(status = 403, body = null)),
+        )
+        val store = makeStore(repo, isDebugBuild = true)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        // Snackbar visible in debug to help dev see the 403.
+        assertTrue(labels.any { it is NotificationStore.Label.ShowSnackbar })
+        assertTrue(labels.any { it is NotificationStore.Label.NavigateUnsupportedType })
+    }
+
     @Test fun tapItem_markReadFails_stillPublishesNav_andShowsSnackbar() = runTest(dispatcher) {
         val notif = Notification(
             id = "N3", title = "T", description = "D",
@@ -293,10 +344,12 @@ class NotificationStoreTest {
     private fun makeStore(
         notificationRepository: NotificationRepository = FakeNotificationRepository(),
         principalRepository: PrincipalRepository = FakePrincipalRepository(),
+        isDebugBuild: Boolean = true,
     ): NotificationStore = NotificationStoreFactory(
         storeFactory = DefaultStoreFactory(),
         notificationRepository = notificationRepository,
         principalRepository = principalRepository,
+        isDebugBuild = isDebugBuild,
     ).create()
 
     private fun notifications(
