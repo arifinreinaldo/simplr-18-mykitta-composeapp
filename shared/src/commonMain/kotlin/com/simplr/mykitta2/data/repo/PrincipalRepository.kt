@@ -50,7 +50,7 @@ class DefaultPrincipalRepository(
         val request = GetRequest(
             functionName = "GetPrincipal",
             offset = 0,
-            recordsize = sessionStore.pagination(),
+            recordsize = 1000,
             search = "all",
             sort = "0",
             user = sessionStore.read()?.supervisorCode ?: FALLBACK_USER,
