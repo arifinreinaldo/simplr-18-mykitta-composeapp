@@ -127,6 +127,8 @@ enum class OrderStatus(val wire: String, val label: String) {
 
 `fromWire` is nullable so a future backend status (`"Refunded"`, `"PartialShip"`, etc.) is dropped from the list rather than mis-grouped or crashing. The legacy app crashes/misroutes on novel statuses — this is the load-bearing safeguard.
 
+**`IsCancel` handling:** legacy overrides the displayed status to `"Cancel"` when `IsCancel=true`. We don't have a Cancel tab; cancelled rows will appear under their raw `InvStatus` (likely `FINISHED`). DTO carries the field so a future slice can layer a "Cancelled" badge or a 5th tab without re-fetching. Not in scope here.
+
 ### 3.4 SQLDelight
 
 `shared/src/commonMain/sqldelight/com/simplr/mykitta2/shared/db/History.sq`:
