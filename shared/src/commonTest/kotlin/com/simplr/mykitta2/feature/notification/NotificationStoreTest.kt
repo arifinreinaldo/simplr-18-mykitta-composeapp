@@ -167,6 +167,41 @@ class NotificationStoreTest {
         assertTrue(store.state.items.first().isRead)
     }
 
+    @Test fun tapItem_PRINCIPAL_inactivePrincipal_blocksNav_andShowsRequestSnackbar() = runTest(dispatcher) {
+        // Notification arrived for a principal that the user has requested but
+        // hasn't been approved by — drilling into the catalog isn't valid yet.
+        val notif = Notification(
+            id = "N1", title = "T", description = "D",
+            type = NotificationType.PRINCIPAL,
+            payload = """{"PrincipalId":"P-1"}""",
+            isRead = false, createdAt = "2026-05-26T00:00:00Z",
+        )
+        val repo = FakeNotificationRepository(pages = mapOf(
+            0 to Outcome.Success(NotificationPage(listOf(notif), hasMore = false)),
+        ))
+        val princRepo = FakePrincipalRepository(byId = mapOf(
+            "P-1" to Principal("P-1", "Acme", "", isActive = false),
+        ))
+        val store = makeStore(repo, princRepo)
+
+        val labels = mutableListOf<NotificationStore.Label>()
+        val collector = launch { store.labels.collect { labels += it } }
+
+        store.accept(NotificationStore.Intent.TapItem(notif))
+
+        collector.cancel()
+        // Only one label, and it MUST NOT be a navigation.
+        assertEquals(1, labels.size)
+        assertTrue(labels.single() is NotificationStore.Label.ShowSnackbar)
+        assertEquals(
+            "Principal has not accepted your request",
+            (labels.single() as NotificationStore.Label.ShowSnackbar).text,
+        )
+        // Mark-read still fires — tapping a notification consumes it.
+        assertEquals(listOf("N1"), repo.markedRead)
+        assertTrue(store.state.items.first().isRead)
+    }
+
     @Test fun tapItem_PRINCIPAL_cacheMiss_publishesUnsupported_andSnackbar() = runTest(dispatcher) {
         val notif = Notification(
             id = "N1", title = "T", description = "D",

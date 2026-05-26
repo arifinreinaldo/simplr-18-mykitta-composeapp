@@ -131,14 +131,24 @@ class NotificationStoreFactory(
                     NotificationType.PRINCIPAL -> {
                         val principalId = parsePrincipalId(notification.payload)
                         val cached = principalId?.let { principalRepository.findById(it) }
-                        if (principalId != null && cached != null) {
-                            publish(NotificationStore.Label.NavigateToPrincipal(
+                        when {
+                            principalId == null || cached == null -> {
+                                publish(NotificationStore.Label.NavigateUnsupportedType)
+                                publish(NotificationStore.Label.ShowSnackbar("Brand not available"))
+                            }
+                            !cached.isActive -> {
+                                // Notification arrived for a principal the user
+                                // has requested but the principal hasn't approved
+                                // yet (or has rejected). Don't drill into a
+                                // catalog the user can't actually open.
+                                publish(NotificationStore.Label.ShowSnackbar(
+                                    "Principal has not accepted your request"
+                                ))
+                            }
+                            else -> publish(NotificationStore.Label.NavigateToPrincipal(
                                 principalId = principalId,
                                 principalName = cached.principalName,
                             ))
-                        } else {
-                            publish(NotificationStore.Label.NavigateUnsupportedType)
-                            publish(NotificationStore.Label.ShowSnackbar("Brand not available"))
                         }
                     }
                     NotificationType.ORDER,
