@@ -1,0 +1,37 @@
+-- Cached order-history rows, one row per invoice. Refreshed from `GetHistory`
+-- via CatalogApi.getHistory. Repository (HistoryRepository) is the only writer;
+-- the screen subscribes to `selectByStatus` flows and reacts to upserts.
+--
+-- `fetchedAt` is per-row epoch-millis so the 5-minute TTL is independently
+-- evaluated per status tab via `oldestFetchedAtByStatus`.
+CREATE TABLE IF NOT EXISTS History (
+    invNo TEXT NOT NULL PRIMARY KEY,
+    invDate TEXT NOT NULL,
+    status TEXT NOT NULL,
+    custName TEXT NOT NULL,
+    total REAL NOT NULL,
+    currency TEXT NOT NULL,
+    itemCount INTEGER NOT NULL,
+    fetchedAt INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS history_status_date ON History(status, invDate DESC);
+
+selectByStatus:
+SELECT * FROM History WHERE status = :status ORDER BY invDate DESC, invNo DESC;
+
+countByStatus:
+SELECT COUNT(*) FROM History WHERE status = :status;
+
+oldestFetchedAtByStatus:
+SELECT MIN(fetchedAt) FROM History WHERE status = :status;
+
+upsert:
+INSERT OR REPLACE INTO History(invNo, invDate, status, custName, total, currency, itemCount, fetchedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteByStatus:
+DELETE FROM History WHERE status = :status;
+
+deleteAll:
+DELETE FROM History;
