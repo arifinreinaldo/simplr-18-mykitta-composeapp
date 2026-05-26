@@ -59,8 +59,19 @@ class DefaultNotificationRepository(
         count
     }
 
-    override suspend fun loadPage(offset: Int): Outcome<NotificationPage> =
-        throw NotImplementedError("Task 9")
+    override suspend fun loadPage(offset: Int): Outcome<NotificationPage> = runCall {
+        val response = catalogApi.getNotificationList(
+            baseUrl(),
+            supervisorRequest("GetNotificationData", offset = offset),
+        )
+        val items = response.items().map { it.toDomain() }
+        if (offset == 0) upsertCache(items)
+        NotificationPage(
+            items = items,
+            hasMore = items.size >= PAGE_SIZE,    // server's hasMoreRecords is unreliable; size-short is truth
+            fromCache = false,
+        )
+    }
 
     override suspend fun markAsRead(id: String): Outcome<Unit> =
         throw NotImplementedError("Task 11")

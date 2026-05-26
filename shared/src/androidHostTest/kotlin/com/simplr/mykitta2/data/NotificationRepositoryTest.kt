@@ -56,6 +56,50 @@ class NotificationRepositoryTest {
         assertEquals(0, repo.unreadCount.value)  // never moved off the default
     }
 
+    @Test fun loadPage_offset0_fullPage_returnsHasMoreTrue() = runTest {
+        val twentyItems = buildItemsJson(count = 20, startId = 1)
+        val repo = harness { respond(twentyItems, HttpStatusCode.OK, jsonHeaders) }
+        val outcome = repo.loadPage(offset = 0)
+        assertIs<Outcome.Success<com.simplr.mykitta2.data.repo.NotificationPage>>(outcome)
+        val page = outcome.value
+        assertEquals(20, page.items.size)
+        assertTrue(page.hasMore)
+        assertEquals(false, page.fromCache)
+    }
+
+    @Test fun loadPage_offset0_shortPage_returnsHasMoreFalse() = runTest {
+        val sevenItems = buildItemsJson(count = 7, startId = 1)
+        val repo = harness { respond(sevenItems, HttpStatusCode.OK, jsonHeaders) }
+        val outcome = repo.loadPage(0)
+        assertIs<Outcome.Success<com.simplr.mykitta2.data.repo.NotificationPage>>(outcome)
+        assertEquals(7, outcome.value.items.size)
+        assertEquals(false, outcome.value.hasMore)
+    }
+
+    @Test fun loadPage_ignoresServerHasMoreRecords() = runTest {
+        // 5 items but server claims hasMoreRecords=1 — repo MUST NOT trust the server field
+        val fiveButServerSaysMore = buildItemsJson(count = 5, startId = 1, hasMoreRecords = 1)
+        val repo = harness { respond(fiveButServerSaysMore, HttpStatusCode.OK, jsonHeaders) }
+        val outcome = repo.loadPage(0)
+        assertIs<Outcome.Success<com.simplr.mykitta2.data.repo.NotificationPage>>(outcome)
+        assertEquals(false, outcome.value.hasMore, "size<PAGE_SIZE must win over server's hasMoreRecords")
+    }
+
+    /**
+     * Build a `User/GetObject` JSON envelope for `GetNotificationData` with
+     * `count` rows. `startId` lets multi-page tests vary item IDs.
+     * `hasMoreRecords` flag is included so the "ignores server" test can lie to us.
+     */
+    private fun buildItemsJson(count: Int, startId: Int, hasMoreRecords: Int = 0): String {
+        val items = (0 until count).joinToString(",") { i ->
+            val id = startId + i
+            """{"Id":"N$id","Title":"T$id","Description":"D$id","Type":"Order",
+               "Payload":"{}","IsRead":0,"CreatedAt":"2026-05-${10 + (i % 20)}T00:00:00Z"}"""
+        }
+        return """{"getObjectResult":{"errorData":{"code":0,"description":""},
+            "hasMoreRecords":$hasMoreRecords,"objectData":[[$items]]}}""".trimIndent()
+    }
+
     /**
      * Build a repo wired to a MockEngine. Session + country are pre-seeded so
      * `baseUrl()` and `supervisorRequest()` resolve cleanly.
