@@ -8,6 +8,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.simplr.mykitta2.data.repo.AuthRepository
 import com.simplr.mykitta2.domain.Country
+import com.simplr.mykitta2.feature.address.AddressFormScreen
+import com.simplr.mykitta2.feature.address.AddressListScreen
+import com.simplr.mykitta2.feature.address.KEY_ADDRESS_SAVED
 import com.simplr.mykitta2.feature.auth.LoginOtpScreen
 import com.simplr.mykitta2.feature.auth.OtpVerifyScreen
 import com.simplr.mykitta2.feature.auth.SignedInPlaceholderScreen
@@ -71,6 +74,7 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
                 onOpenSearch = { navController.navigate(Destination.Search) },
                 onOpenProfileDetail = { navController.navigate(Destination.ProfileDetail) },
                 onOpenNotifications = { navController.navigate(Destination.Notifications) },
+                onOpenAddressList = { navController.navigate(Destination.AddressList) },
                 onLogout = {
                     // Wipe local session, then drop the whole signed-in graph so
                     // VMs die and the system Back button on Login exits the app
@@ -91,6 +95,31 @@ fun AppNavHost(startDestination: SplashStore.Destination) {
         }
         composable<Destination.ProfileDetail> {
             ProfileDetailScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Destination.AddressList> { backStackEntry ->
+            AddressListScreen(
+                onBack = { navController.popBackStack() },
+                onOpenForm = { id ->
+                    navController.navigate(Destination.AddressForm(customerAddressId = id))
+                },
+                navEntry = backStackEntry,
+            )
+        }
+        composable<Destination.AddressForm> { backStackEntry ->
+            val route = backStackEntry.toRoute<Destination.AddressForm>()
+            AddressFormScreen(
+                customerAddressId = route.customerAddressId,
+                onBack = { navController.popBackStack() },
+                onSaved = {
+                    // Signal the list (via its saved-state handle) that an
+                    // address was just persisted, then pop. The list reads
+                    // the flag in its LaunchedEffect and shows a snackbar.
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(KEY_ADDRESS_SAVED, true)
+                    navController.popBackStack()
+                },
+            )
         }
         composable<Destination.Notifications> {
             // Tapping a PRINCIPAL notification needs to deep-link into a

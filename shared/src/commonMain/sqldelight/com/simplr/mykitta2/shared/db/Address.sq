@@ -38,5 +38,19 @@ upsert:
 INSERT OR REPLACE INTO Address(customerAddressId, name, address1, address2, zipcode, city, phone, contact, barangay, province, subdivision, isSelected, fetchedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Default-address invariant. Always run these two together inside a transaction
+-- so the "one row marked" property holds even if a refresh races a tap.
+-- Local-only flag — the backend has its own notion of "Default" via the
+-- `CustomerAddressID == "Default"` sentinel, but that's destructive to write
+-- against and we don't probe it in v1.
+clearAllDefaults:
+UPDATE Address SET isSelected = 0;
+
+markAsDefault:
+UPDATE Address SET isSelected = 1 WHERE customerAddressId = :customerAddressId;
+
+selectedId:
+SELECT customerAddressId FROM Address WHERE isSelected = 1 LIMIT 1;
+
 deleteAll:
 DELETE FROM Address;

@@ -37,4 +37,20 @@ sealed interface Destination {
      *  hidden while the user is on the notification list. */
     @Serializable
     data object Notifications : Destination
+
+    /** Drill-down from the My Profile tab's "Shipment Address" menu row.
+     *  Top-level (sibling of [ProfileDetail]) so the bottom-nav is hidden
+     *  while the user is on the address list. */
+    @Serializable
+    data object AddressList : Destination
+
+    /** Add or edit a single shipment address. Reached from [AddressList]
+     *  via the `+` action (null id = create) or a row tap (populated id =
+     *  edit). On a successful save, the form pops back and signals the
+     *  list via the parent's saved-state handle.
+     *
+     *  The id is nullable so Compose Navigation auto-derives the NavType
+     *  without a custom typeMap. */
+    @Serializable
+    data class AddressForm(val customerAddressId: String? = null) : Destination
 }

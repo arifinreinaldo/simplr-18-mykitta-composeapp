@@ -158,7 +158,15 @@ class AddressFormStoreFactory(
                 dispatch(Message.ValidationChanged(errors, valid))
                 return
             }
-            val customerAddressId = (s.mode as? AddressFormStore.Mode.Edit)?.customerAddressId.orEmpty()
+            // The local "__primary__" id is our synthetic stand-in for a wire
+            // row that came back with a blank CustomerAddressID. Translate
+            // back when sending — the backend's anchor-row sentinel is empty
+            // string, not our local key. Real ids (server-assigned, or the
+            // literal "Default") pass through unchanged.
+            val customerAddressId = (s.mode as? AddressFormStore.Mode.Edit)
+                ?.customerAddressId
+                ?.takeIf { !it.startsWith(SYNTHETIC_PRIMARY_PREFIX) }
+                .orEmpty()
             val request = AddressRequest(
                 customerAddressId = customerAddressId,
                 name = s.fields.name.trim(),
@@ -206,6 +214,16 @@ class AddressFormStoreFactory(
             Message.SubmitFinished -> copy(submitting = false)
             is Message.ErrorSet -> copy(error = msg.error)
         }
+    }
+
+    private companion object {
+        /**
+         * Local-cache prefix for rows whose wire `CustomerAddressID` was blank.
+         * Editing one sends `customerAddressId = ""` to `User/AddAddress` so
+         * the backend updates the anchor row rather than creating a new one.
+         * Kept in sync with `DefaultAddressRepository.PRIMARY_KEY_PLACEHOLDER`.
+         */
+        const val SYNTHETIC_PRIMARY_PREFIX = "__primary__"
     }
 }
 

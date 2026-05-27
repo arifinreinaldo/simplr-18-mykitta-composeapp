@@ -105,4 +105,28 @@ class MyKittaDatabaseWiperTest {
 
         assertEquals(0L, db.historyQueries.countByStatus("Waiting").executeAsOne())
     }
+
+    @Test fun wipeAll_emptiesAddressTable() = runTest {
+        val db = freshDb()
+        db.addressQueries.upsert(
+            customerAddressId = "A-1",
+            name = "Home",
+            address1 = "1 Main St",
+            address2 = "",
+            zipcode = "1000",
+            city = "Manila",
+            phone = "0900",
+            contact = "Juan",
+            barangay = "",
+            province = "",
+            subdivision = "",
+            isSelected = 1,
+            fetchedAt = 0,
+        )
+        assertEquals(1L, db.addressQueries.countAll().executeAsOne())
+
+        MyKittaDatabaseWiper(db).wipeAll()
+
+        assertEquals(0L, db.addressQueries.countAll().executeAsOne())
+    }
 }

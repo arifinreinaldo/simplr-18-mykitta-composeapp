@@ -27,6 +27,9 @@ interface AddressListStore : Store<AddressListStore.Intent, AddressListStore.Sta
         data object DismissError : Intent
         data object AddTapped : Intent
         data class RowTapped(val customerAddressId: String) : Intent
+
+        /** Tap on the ☆ button. Local-only flag flip — no network call. */
+        data class SetDefault(val customerAddressId: String) : Intent
     }
 
     sealed interface Label {
@@ -88,6 +91,19 @@ class AddressListStoreFactory(
                     publish(AddressListStore.Label.OpenForm(customerAddressId = null))
                 is AddressListStore.Intent.RowTapped ->
                     publish(AddressListStore.Label.OpenForm(intent.customerAddressId))
+                is AddressListStore.Intent.SetDefault -> setDefault(intent.customerAddressId)
+            }
+        }
+
+        private fun setDefault(customerAddressId: String) {
+            scope.launch {
+                // The observe() Flow re-emits as soon as the transaction
+                // commits, so the UI rebadges without a separate state mutation.
+                when (val outcome = repository.setAsDefault(customerAddressId)) {
+                    is Outcome.Failure ->
+                        dispatch(Message.ErrorSet(ErrorMapper.message(outcome.error)))
+                    Outcome.Idle, Outcome.Loading, is Outcome.Success -> Unit
+                }
             }
         }
 

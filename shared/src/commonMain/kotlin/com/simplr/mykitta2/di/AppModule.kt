@@ -21,7 +21,9 @@ import com.simplr.mykitta2.data.prefs.SettingsThemeStore
 import com.simplr.mykitta2.data.prefs.SettingsTokenStore
 import com.simplr.mykitta2.data.prefs.ThemeStore
 import com.simplr.mykitta2.data.prefs.TokenStore
+import com.simplr.mykitta2.data.repo.AddressRepository
 import com.simplr.mykitta2.data.repo.AuthRepository
+import com.simplr.mykitta2.data.repo.DefaultAddressRepository
 import com.simplr.mykitta2.data.repo.DefaultAuthRepository
 import com.simplr.mykitta2.data.repo.DefaultHistoryRepository
 import com.simplr.mykitta2.data.repo.DefaultHomeRepository
@@ -35,6 +37,11 @@ import com.simplr.mykitta2.data.repo.MyKittaDatabaseWiper
 import com.simplr.mykitta2.data.repo.NotificationRepository
 import com.simplr.mykitta2.data.repo.PrincipalRepository
 import com.simplr.mykitta2.data.repo.ProfileRepository
+import com.simplr.mykitta2.feature.address.AddressFormArgs
+import com.simplr.mykitta2.feature.address.AddressFormStoreFactory
+import com.simplr.mykitta2.feature.address.AddressFormViewModel
+import com.simplr.mykitta2.feature.address.AddressListStoreFactory
+import com.simplr.mykitta2.feature.address.AddressListViewModel
 import com.simplr.mykitta2.feature.auth.LoginOtpStoreFactory
 import com.simplr.mykitta2.feature.auth.LoginOtpViewModel
 import com.simplr.mykitta2.feature.auth.OtpVerifyArgs
@@ -153,6 +160,14 @@ val repositoryModule = module {
             countryStore = get(),
         )
     }
+    single<AddressRepository> {
+        DefaultAddressRepository(
+            catalogApi = get(),
+            database = get(),
+            sessionStore = get(),
+            countryStore = get(),
+        )
+    }
 }
 
 val featureAuthModule = module {
@@ -210,6 +225,25 @@ val featureHistoryModule = module {
     viewModelOf(::HistoryViewModel)
 }
 
+val featureAddressModule = module {
+    factory { AddressListStoreFactory(storeFactory = get(), repository = get()) }
+    viewModelOf(::AddressListViewModel)
+
+    // Form factory takes per-screen args (customerAddressId, captured from
+    // the route) via parametersOf at koinViewModel() call time.
+    factory { (args: AddressFormArgs) ->
+        AddressFormStoreFactory(
+            storeFactory = get(),
+            repository = get(),
+            countryStore = get(),
+            args = args,
+        )
+    }
+    factory { (args: AddressFormArgs) ->
+        AddressFormViewModel(storeFactory = get { parametersOf(args) })
+    }
+}
+
 val featureNotificationModule = module {
     // PendingNavStore is process-scoped state for cross-NavController deep-links
     // (e.g. NotificationScreen → MainShell's PrincipalCatalog tab). Lives here
@@ -256,6 +290,7 @@ fun commonModules(): List<Module> = listOf(
     featurePrincipalModule,
     featureProfileModule,
     featureHistoryModule,
+    featureAddressModule,
     featureNotificationModule,
     featureSplashModule,
 )

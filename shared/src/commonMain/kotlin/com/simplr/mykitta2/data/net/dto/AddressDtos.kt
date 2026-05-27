@@ -1,19 +1,29 @@
 package com.simplr.mykitta2.data.net.dto
 
-import com.simplr.mykitta2.domain.Address
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * `GetShipmentAddress` (via `User/GetObject`) — the legacy shipment-address
- * read endpoint. Response is the standard double-wrapped envelope; rows live
- * at `objectData[0]`.
+ * `GetShipmentAddress` (via `User/GetObject`) — the shipment-address read
+ * endpoint. Response is the standard double-wrapped envelope; rows live at
+ * `objectData[0]`.
  *
- * Wire field names mirror the legacy contract verbatim. PH-specific fields
- * (`Barangay`, `Province`, `Subdivision`) come back Pascal-cased from the
- * backend; lowercase fields stayed lowercase. Every field is nullable so the
- * parser survives partial / sparse responses (e.g. SG users have blank
- * `Barangay`/`Province`/`Subdivision`).
+ * Wire field names are PascalCase on read (verified against live response on
+ * 2026-05-27). This differs from the `User/AddAddress` *write* payload, which
+ * uses camelCase per the legacy contract — annoying but real. The two casings
+ * stay separate so each side serialises against what the server actually sends
+ * / accepts.
+ *
+ * No `isSelected` on the wire — the backend signals the default address by
+ * setting [customerAddressId] to the literal string `"Default"`. The legacy
+ * app's "tap a star to set default" was local-only; we read the server's
+ * marker but don't surface a setter in v1 (deferred per the plan).
+ *
+ * Every field is nullable so the parser survives partial / sparse responses
+ * (e.g. SG users with blank PH fields, or pre-seed rows missing fields).
+ *
+ * `CustNo` is included for parsing tolerance but not surfaced — the address
+ * is already scoped to the authenticated user.
  */
 @Serializable
 data class AddressListServerResponse(
@@ -22,34 +32,19 @@ data class AddressListServerResponse(
 
 @Serializable
 data class AddressDto(
-    val customerAddressId: String? = null,
-    val name: String? = null,
-    val address1: String? = null,
-    val address2: String? = null,
-    val zipcode: String? = null,
-    val city: String? = null,
-    val phone: String? = null,
-    val contact: String? = null,
+    @SerialName("CustNo") val custNo: String? = null,
+    @SerialName("CustomerAddressID") val customerAddressId: String? = null,
+    @SerialName("Name") val name: String? = null,
+    @SerialName("Address1") val address1: String? = null,
+    @SerialName("Address2") val address2: String? = null,
+    @SerialName("Zipcode") val zipcode: String? = null,
+    @SerialName("City") val city: String? = null,
+    @SerialName("Phone") val phone: String? = null,
+    @SerialName("Contact") val contact: String? = null,
     @SerialName("Barangay") val barangay: String? = null,
     @SerialName("Province") val province: String? = null,
     @SerialName("Subdivision") val subdivision: String? = null,
-    val isSelected: Boolean? = null,
-) {
-    fun toDomain() = Address(
-        customerAddressId = customerAddressId.orEmpty(),
-        name = name.orEmpty(),
-        address1 = address1.orEmpty(),
-        address2 = address2.orEmpty(),
-        zipcode = zipcode.orEmpty(),
-        city = city.orEmpty(),
-        phone = phone.orEmpty(),
-        contact = contact.orEmpty(),
-        barangay = barangay.orEmpty(),
-        province = province.orEmpty(),
-        subdivision = subdivision.orEmpty(),
-        isSelected = isSelected == true,
-    )
-}
+)
 
 /**
  * `User/AddAddress` request body — covers both insert and update. Send an

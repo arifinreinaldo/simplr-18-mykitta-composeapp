@@ -57,6 +57,7 @@ fun MainShell(
     onOpenSearch: () -> Unit = {},
     onOpenProfileDetail: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
+    onOpenAddressList: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val tabNavController = rememberNavController()
@@ -150,6 +151,7 @@ fun MainShell(
                         // tutorial) stay stubs until their feature surfaces land.
                         when (id) {
                             "profile" -> onOpenProfileDetail()
+                            "shipment" -> onOpenAddressList()
                             "history" -> tabNavController.navigate(MainTab.History)
                             "about" -> uriHandler.openUri("https://www.youtube.com/watch?v=phrPUil2_7E")
                         }
